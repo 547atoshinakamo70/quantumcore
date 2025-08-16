@@ -1,32 +1,40 @@
-version: "{build}"
-
-image: Visual Studio 2022
+version: '{build}'
+image: Ubuntu
+build: off
 
 environment:
-  nodejs_version: "18"
+  APP_DIR: services/quantum_core
+  PORT: 5002
+
+init:
+  - sh: ls -la
 
 install:
-  - ps: Install-Product node $env:nodejs_version
-  - npm install --legacy-peer-deps
-
-build: off  # Desactiva MSBuild
+  - sh: |
+      sudo apt-get update
+      sudo apt-get install -y python3-venv python3-pip curl
+      python3 -m venv .venv
+      . .venv/bin/activate
+      pip install --upgrade pip
+      # Instala deps si existen; añade fastapi/uvicorn por si faltan en requirements
+      if [ -f "$APP_DIR/requirements.txt" ]; then pip install -r "$APP_DIR/requirements.txt"; fi
+      pip install fastapi uvicorn
 
 build_script:
-  - echo "Compilando QuantumCore con Electron Builder"
-  - npm run dist
+  - sh: |
+      set -e
+      . .venv/bin/activate
+      cd "$APP_DIR"
+      # Lanza la API en background
+      nohup uvicorn quantum_agent:app --host 127.0.0.1 --port $PORT >/tmp/app.log 2>&1 &
+      APP_PID=$!
+      sleep 3
+      # Healthcheck (falla el build si 4xx/5xx)
+      curl -f "http://127.0.0.1:$PORT/healthz"
+      # Muestra algo útil de log y mata el server
+      tail -n +1 /tmp/app.log || true
+      kill $APP_PID || true
 
 artifacts:
-  - path: dist\*
-    name: installers
-
-deploy:
-  provider: GitHub
-  release: v$(APPVEYOR_BUILD_VERSION)
-  description: "QuantumCore auto-build"
-  auth_token:
-    secure: %GITHUB_TOKEN%
-  artifact: installers
-  draft: false
-  prerelease: false
-  on:
-    branch: main
+  - path: services/quantum_core/**
+    name: quantum-core-source
