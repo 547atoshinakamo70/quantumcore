@@ -4,8 +4,6 @@ image: Visual Studio 2022
 
 environment:
   nodejs_version: "18"
-  ELECTRON_CACHE: C:\Users\appveyor\AppData\Local\electron\Cache
-  ELECTRON_BUILDER_CACHE: C:\Users\appveyor\AppData\Local\electron-builder\Cache
 
 install:
   - ps: Install-Product node $env:nodejs_version
@@ -19,13 +17,13 @@ artifacts:
     name: installers
 
 deploy:
-  release: v$(APPVEYOR_BUILD_VERSION)
-  description: "QuantumEdge Enterprise auto-build"
-  provider: GitHub
-  auth_token:
-    secure: %GITHUB_TOKEN%
-  artifact: installers
-  draft: false
-  prerelease: false
-  on:
-    branch: main
+  - provider: GitHub
+    release: v$(APPVEYOR_BUILD_VERSION)
+    description: "QuantumCore auto-build"
+    auth_token:
+      secure: %GITHUB_TOKEN%
+    artifact: installers
+    draft: false
+    prerelease: false
+    on:
+      branch: main
