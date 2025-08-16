@@ -1,1 +1,34 @@
+version: "{build}"
+
+image: Visual Studio 2022
+
+environment:
+  nodejs_version: "18"
+
+install:
+  - ps: Install-Product node $env:nodejs_version
+  - npm install --legacy-peer-deps
+
+build: off  # Desactiva MSBuild
+
+build_script:
+  - echo "Compilando QuantumCore con Electron Builder"
+  - npm run dist
+
+artifacts:
+  - path: dist\*
+    name: installers
+
+deploy:
+  - provider: GitHub
+    release: v$(APPVEYOR_BUILD_VERSION)
+    description: "QuantumCore auto-build"
+    auth_token:
+      secure: %GITHUB_TOKEN%
+    artifact: installers
+    draft: false
+    prerelease: false
+    on:
+      branch: main
+
 
