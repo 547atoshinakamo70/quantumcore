@@ -10,7 +10,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest, macos-latest]
 
     steps:
       - name: Checkout code
@@ -21,22 +21,6 @@ jobs:
         with:
           node-version: 18
 
-      # 🔧 Dependencias necesarias en Linux
-      - name: Install system dependencies (Linux only)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libnss3 \
-            libatk1.0-0 \
-            libatk-bridge2.0-0 \
-            libgtk-3-0 \
-            libx11-xcb1 \
-            libxss1 \
-            libasound2 \
-            libgbm-dev
-
-      # ✅ Instalar dependencias ignorando conflictos de peer-deps
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
@@ -46,7 +30,6 @@ jobs:
       - name: Build installers (with debug logs)
         run: npm run dist --verbose
 
-      # 📦 Subida automática a GitHub Releases
       - name: Upload installers to Release
         if: success()
         uses: softprops/action-gh-release@v1
