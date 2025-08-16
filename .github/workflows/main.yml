@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 18
 
-      # 🔧 Instalar dependencias necesarias en Linux para Electron
+      # 🔧 Dependencias necesarias en Linux
       - name: Install system dependencies (Linux only)
         if: runner.os == 'Linux'
         run: |
@@ -36,14 +36,19 @@ jobs:
             libasound2 \
             libgbm-dev
 
+      # ✅ Instalar dependencias ignorando conflictos de peer-deps
       - name: Install dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
-      - name: Build installers
-        run: npm run dist
+      - name: Install electron-builder globally
+        run: npm install -g electron-builder
+
+      - name: Build installers (with debug logs)
+        run: npm run dist --verbose
 
       # 📦 Subida automática a GitHub Releases
       - name: Upload installers to Release
+        if: success()
         uses: softprops/action-gh-release@v1
         with:
           files: dist/*
