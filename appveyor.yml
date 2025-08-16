@@ -1,44 +1,105 @@
 version: '{build}'
-image: Ubuntu2204   # <- JAMMY: glibc reciente
 build: off
 test: off
 
 environment:
-  CI: true
+  matrix:
+    - IMG: Visual Studio 2022
+    - IMG: Ubuntu2204
 
-install:
-  - sh: |
-      set -e
-      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-      sudo apt-get install -y nodejs jq
-      if [ -f package.json ]; then
-        npm ci || npm install
-      fi
+# ===== Windows: crea instalador .exe con NSIS =====
+for:
+-
+  matrix:
+    only:
+      - IMG: Visual Studio 2022
+  image: Visual Studio 2022
 
-build_script:
-  - sh: |
-      set -e
-      if [ -f package.json ]; then
-        if npm run | grep -q " build"; then
-          npm run build
-        else
-          echo "[info] no 'build' script; skipping"
+  install:
+    - ps: Install-Product node 20
+    - cmd: |
+        if exist package.json (
+          npm ci || npm install
+        ) else (
+          echo [warn] No package.json
+        )
+        choco install nsis -y
+
+  build_script:
+    - cmd: |
+        REM --- Build frontend (opcional; ajusta si tu build es distinto) ---
+        if exist package.json (
+          call npm run | findstr /I " build" >nul
+          if %errorlevel%==0 ( npm run build ) else ( echo [info] sin script build )
+        )
+
+        REM --- NSIS script "installer.nsi" ---
+        > installer.nsi echo !include "MUI2.nsh"
+        >> installer.nsi echo Name "QuantumCore"
+        >> installer.nsi echo OutFile "QuantumCore-Setup-v%APPVEYOR_BUILD_VERSION%.exe"
+        >> installer.nsi echo InstallDir "$PROGRAMFILES\\QuantumCore"
+        >> installer.nsi echo RequestExecutionLevel admin
+        >> installer.nsi echo ^!define MUI_ABORTWARNING
+        >> installer.nsi echo ^!insertmacro MUI_PAGE_DIRECTORY
+        >> installer.nsi echo ^!insertmacro MUI_PAGE_INSTFILES
+        >> installer.nsi echo ^!insertmacro MUI_LANGUAGE "English"
+        >> installer.nsi echo Section "Install"
+        >> installer.nsi echo   SetOutPath "$INSTDIR"
+        >> installer.nsi echo   File /r "dist\\*.*"
+        >> installer.nsi echo   CreateDirectory "$SMPROGRAMS\\QuantumCore"
+        >> installer.nsi echo   IfFileExists "$INSTDIR\\index.html" 0 +3
+        >> installer.nsi echo     CreateShortCut "$DESKTOP\\QuantumCore.lnk" "$INSTDIR\\index.html"
+        >> installer.nsi echo     Goto +2
+        >> installer.nsi echo     CreateShortCut "$DESKTOP\\QuantumCore.lnk" "$INSTDIR"
+        >> installer.nsi echo   IfFileExists "$INSTDIR\\index.html" 0 +3
+        >> installer.nsi echo     CreateShortCut "$SMPROGRAMS\\QuantumCore\\QuantumCore.lnk" "$INSTDIR\\index.html"
+        >> installer.nsi echo     Goto +2
+        >> installer.nsi echo     CreateShortCut "$SMPROGRAMS\\QuantumCore\\QuantumCore.lnk" "$INSTDIR"
+        >> installer.nsi echo SectionEnd
+
+        "C:\Program Files (x86)\NSIS\makensis.exe" /V2 installer.nsi
+
+        REM --- Copia con alias "latest" ---
+        copy /Y "QuantumCore-Setup-v%APPVEYOR_BUILD_VERSION%.exe" "QuantumCore-Setup-latest.exe"
+
+        REM --- Checksums ---
+        powershell -NoProfile -Command ^
+          "$h1=(Get-FileHash 'QuantumCore-Setup-v%APPVEYOR_BUILD_VERSION%.exe' -Algorithm SHA256).Hash; ^
+           $h2=(Get-FileHash 'QuantumCore-Setup-latest.exe' -Algorithm SHA256).Hash; ^
+           Set-Content SHA256SUMS.txt ($h1+'  QuantumCore-Setup-v%APPVEYOR_BUILD_VERSION%.exe'); ^
+           Add-Content SHA256SUMS.txt ($h2+'  QuantumCore-Setup-latest.exe')"
+
+  artifacts:
+    - path: QuantumCore-Setup-v$(APPVEYOR_BUILD_VERSION).exe
+    - path: QuantumCore-Setup-latest.exe
+    - path: SHA256SUMS.txt
+
+# ===== Linux: empaqueta .tar.gz =====
+-
+  matrix:
+    only:
+      - IMG: Ubuntu2204
+  image: Ubuntu2204
+
+  install:
+    - sh: |
+        set -e
+        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+        if [ -f package.json ]; then
+          npm ci || npm install
         fi
-      fi
 
-after_build:
-  - sh: |
-      if [ -d dist ]; then
-        zip -r artifact.zip dist
-      elif [ -d build ]; then
-        zip -r artifact.zip build
-      else
-        zip -r artifact.zip .
-      fi
+  build_script:
+    - sh: |
+        set -e
+        if [ -f package.json ] && npm run | grep -q " build"; then
+          npm run build
+        fi
+        mkdir -p release
+        tar -C dist -czf release/QuantumCore-v$(APPVEYOR_BUILD_VERSION)-linux.tar.gz .
+        cp release/QuantumCore-v$(APPVEYOR_BUILD_VERSION)-linux.tar.gz release/QuantumCore-latest-linux.tar.gz
+        (cd release && sha256sum QuantumCore-* > SHA256SUMS.txt || shasum -a 256 QuantumCore-* > SHA256SUMS.txt)
 
-artifacts:
-  - path: artifact.zip
-    name: quantumcore-build
-
-cache:
-  - node_modules -> package-lock.json
+  artifacts:
+    - path: release/**
