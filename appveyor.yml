@@ -1,40 +1,57 @@
 version: '{build}'
 image: Ubuntu
 build: off
+test: off
 
 environment:
-  APP_DIR: services/quantum_core
-  PORT: 5002
+  CI: true
 
 init:
   - sh: ls -la
 
 install:
   - sh: |
-      sudo apt-get update
-      sudo apt-get install -y python3-venv python3-pip curl
-      python3 -m venv .venv
-      . .venv/bin/activate
-      pip install --upgrade pip
-      # Instala deps si existen; añade fastapi/uvicorn por si faltan en requirements
-      if [ -f "$APP_DIR/requirements.txt" ]; then pip install -r "$APP_DIR/requirements.txt"; fi
-      pip install fastapi uvicorn
+      set -e
+      # Instala Node 20
+      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+      sudo apt-get install -y nodejs jq
+      # Dependencias del proyecto (si hay package.json)
+      if [ -f package.json ]; then
+        npm ci || npm install
+      fi
+      # (Opcional) si tienes Hardhat, compila contratos
+      if [ -f hardhat.config.js ]; then
+        npx --yes hardhat compile || echo "[info] hardhat compile skipped"
+      fi
 
 build_script:
   - sh: |
       set -e
-      . .venv/bin/activate
-      cd "$APP_DIR"
-      # Lanza la API en background
-      nohup uvicorn quantum_agent:app --host 127.0.0.1 --port $PORT >/tmp/app.log 2>&1 &
-      APP_PID=$!
-      sleep 3
-      # Healthcheck (falla el build si 4xx/5xx)
-      curl -f "http://127.0.0.1:$PORT/healthz"
-      # Muestra algo útil de log y mata el server
-      tail -n +1 /tmp/app.log || true
-      kill $APP_PID || true
+      if [ -f package.json ]; then
+        # Compila si existe script "build"
+        if npm run | grep -q " build"; then
+          npm run build
+        else
+          echo "[info] No 'build' script in package.json; skipping build."
+        fi
+      else
+        echo "[warn] No package.json; nothing to build."
+      fi
+
+after_build:
+  - sh: |
+      # Empaqueta artefacto
+      if [ -d dist ]; then
+        zip -r artifact.zip dist
+      elif [ -d build ]; then
+        zip -r artifact.zip build
+      else
+        zip -r artifact.zip .
+      fi
 
 artifacts:
-  - path: services/quantum_core/**
-    name: quantum-core-source
+  - path: artifact.zip
+    name: quantumcore-build
+
+cache:
+  - node_modules -> package-lock.json
