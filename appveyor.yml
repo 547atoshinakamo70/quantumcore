@@ -1,46 +1,33 @@
 version: '{build}'
-image: Ubuntu
+image: Ubuntu2204   # <- JAMMY: glibc reciente
 build: off
 test: off
 
 environment:
   CI: true
 
-init:
-  - sh: ls -la
-
 install:
   - sh: |
       set -e
-      # Instala Node 20
       curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
       sudo apt-get install -y nodejs jq
-      # Dependencias del proyecto (si hay package.json)
       if [ -f package.json ]; then
         npm ci || npm install
-      fi
-      # (Opcional) si tienes Hardhat, compila contratos
-      if [ -f hardhat.config.js ]; then
-        npx --yes hardhat compile || echo "[info] hardhat compile skipped"
       fi
 
 build_script:
   - sh: |
       set -e
       if [ -f package.json ]; then
-        # Compila si existe script "build"
         if npm run | grep -q " build"; then
           npm run build
         else
-          echo "[info] No 'build' script in package.json; skipping build."
+          echo "[info] no 'build' script; skipping"
         fi
-      else
-        echo "[warn] No package.json; nothing to build."
       fi
 
 after_build:
   - sh: |
-      # Empaqueta artefacto
       if [ -d dist ]; then
         zip -r artifact.zip dist
       elif [ -d build ]; then
