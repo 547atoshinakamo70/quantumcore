@@ -1,39 +1,30 @@
-name: Build & Release QuantumEdge
+${{ secrets.Gversion: "{build}"
 
-on:
-  push:
-    tags:
-      - "v*"
+image: Visual Studio 2022
 
-jobs:
-  release:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [windows-latest, macos-latest]
+environment:
+  nodejs_version: "18"
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+install:
+  - ps: Install-Product node $env:nodejs_version
+  - npm install --legacy-peer-deps
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
+build_script:
+  - npm run dist
 
-      - name: Install dependencies
-        run: npm install --legacy-peer-deps
+artifacts:
+  - path: dist\*
+    name: installers
 
-      - name: Install electron-builder globally
-        run: npm install -g electron-builder
-
-      - name: Build installers (with debug logs)
-        run: npm run dist --verbose
-
-      - name: Upload installers to Release
-        if: success()
-        uses: softprops/action-gh-release@v1
-        with:
-          files: dist/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+deploy:
+  - provider: GitHub
+    release: v$(APPVEYOR_BUILD_VERSION)
+    description: "QuantumEdge Enterprise auto-build"
+    auth_token:
+      secure: %GITHUB_TOKEN%
+    artifact: installers
+    draft: false
+    prerelease: false
+    on:
+      branch: main
+ITHUB_TOKEN }}
