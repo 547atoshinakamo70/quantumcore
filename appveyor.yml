@@ -9,58 +9,55 @@ environment:
 
 # ---------- WINDOWS: instalador NSIS + portable ZIP ----------
 for:
--
-  matrix:
-    only:
-      - IMG: Visual Studio 2022
-  image: Visual Studio 2022
+  - matrix:
+      only:
+        - IMG: Visual Studio 2022
+    image: Visual Studio 2022
 
-  install:
-    - ps: Install-Product node 20
-    - cmd: |
-        if exist package.json (
-          npm ci || npm install
-        ) else (
-          echo [warn] No package.json en la raiz
-        )
-        choco install nsis -y --no-progress
+    install:
+      - ps: Install-Product node 20
+      - cmd: |
+          if exist package.json (
+            npm ci || npm install
+          ) else (
+            echo [warn] No package.json en la raiz
+          )
+          choco install nsis -y --no-progress
 
-  build_script:
-    - ps: |
-        Set-StrictMode -Version Latest
-        $ErrorActionPreference = 'Stop'
+    build_script:
+      - ps: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
 
-        # 1) Build (si existe script)
-        if (Test-Path package.json) {
-          $hasBuild=(npm run | Select-String -Pattern ' build') -ne $null
-          if ($hasBuild) { npm run build } else { Write-Host "[info] sin script build" }
-        }
-
-        # 2) Asegurar carpeta de salida
-        $dist = "dist"
-        if (-not (Test-Path $dist)) {
-          if (Test-Path "build") {
-            Write-Host "[info] usando carpeta 'build' como 'dist'"
-            Rename-Item -Path "build" -NewName "dist"
-          } else {
-            Write-Host "[info] creando 'dist' y copiando proyecto (sin node_modules/.git)"
-            New-Item -ItemType Directory -Force -Path $dist | Out-Null
-            robocopy . dist /E /XD node_modules .git /XF appveyor.yml installer.nsi || (if ($LASTEXITCODE -le 3) {{ exit 0 }} else {{ exit $LASTEXITCODE }})
+          # 1) Build (si existe script)
+          if (Test-Path package.json) {
+            $hasBuild = (npm run | Select-String -Pattern ' build') -ne $null
+            if ($hasBuild) { npm run build } else { Write-Host "[info] sin script build" }
           }
-        }
 
-        # 3) Comprobar NSIS
-        $makensis = 'C:\Program Files (x86)\NSIS\makensis.exe'
-        if (-not (Test-Path $makensis)) {
-          $makensis = 'C:\Program Files (x86)\NSIS\Bin\makensis.exe'
-        }
-        if (-not (Test-Path $makensis)) {
-          throw "NSIS no encontrado. Revisa instalación de choco nsis."
-        }
+          # 2) Asegurar carpeta de salida
+          $dist = "dist"
+          if (-not (Test-Path $dist)) {
+            if (Test-Path "build") {
+              Write-Host "[info] usando carpeta 'build' como 'dist'"
+              Rename-Item -Path "build" -NewName "dist"
+            } else {
+              Write-Host "[info] creando 'dist' y copiando proyecto (sin node_modules/.git)"
+              New-Item -ItemType Directory -Force -Path $dist | Out-Null
+              robocopy . dist /E /XD node_modules .git /XF appveyor.yml installer.nsi | Out-Host
+              $code = $LASTEXITCODE
+              if ($code -gt 3) { throw "robocopy fallo con codigo $code" }
+            }
+          }
 
-        # 4) Generar script NSIS
-        $ver = $env:APPVEYOR_BUILD_VERSION
-        $nsi = @"
+          # 3) Comprobar NSIS
+          $makensis = 'C:\Program Files (x86)\NSIS\makensis.exe'
+          if (-not (Test-Path $makensis)) { $makensis = 'C:\Program Files (x86)\NSIS\Bin\makensis.exe' }
+          if (-not (Test-Path $makensis)) { throw "NSIS no encontrado. Revisa instalación de choco nsis." }
+
+          # 4) Generar script NSIS
+          $ver = $env:APPVEYOR_BUILD_VERSION
+          $nsi = @"
 !include "MUI2.nsh"
 Name "QuantumCore"
 OutFile "QuantumCore-Setup-v$ver.exe"
@@ -80,63 +77,62 @@ Section "Install"
     CreateShortCut "$SMPROGRAMS\QuantumCore\QuantumCore.lnk" "$INSTDIR\index.html"
 SectionEnd
 "@
-        Set-Content -Path installer.nsi -Value $nsi -Encoding ascii
+          Set-Content -Path installer.nsi -Value $nsi -Encoding ascii
 
-        # 5) Compilar instalador
-        & "$makensis" /V2 installer.nsi
+          # 5) Compilar instalador
+          & "$makensis" /V2 installer.nsi
 
-        # 6) Alias "latest"
-        Copy-Item "QuantumCore-Setup-v$ver.exe" "QuantumCore-Setup-latest.exe" -Force
+          # 6) Alias "latest"
+          Copy-Item "QuantumCore-Setup-v$ver.exe" "QuantumCore-Setup-latest.exe" -Force
 
-        # 7) Portable ZIP (opcional pero útil)
-        if (Test-Path dist) {
-          powershell -Command "Compress-Archive -Path dist\* -DestinationPath QuantumCore-v$ver-portable.zip -Force"
-          Copy-Item "QuantumCore-v$ver-portable.zip" "QuantumCore-latest-portable.zip" -Force
-        }
-
-        # 8) Checksums
-        $out = @()
-        foreach ($f in @("QuantumCore-Setup-v$ver.exe","QuantumCore-Setup-latest.exe","QuantumCore-v$ver-portable.zip","QuantumCore-latest-portable.zip")) {
-          if (Test-Path $f) {
-            $h=(Get-FileHash $f -Algorithm SHA256).Hash
-            $out += "$h  $f"
+          # 7) Portable ZIP
+          if (Test-Path dist) {
+            Compress-Archive -Path dist\* -DestinationPath "QuantumCore-v$ver-portable.zip" -Force
+            Copy-Item "QuantumCore-v$ver-portable.zip" "QuantumCore-latest-portable.zip" -Force
           }
-        }
-        Set-Content SHA256SUMS.txt ($out -join "`r`n") -Encoding ascii
 
-  artifacts:
-    - path: QuantumCore-Setup-v$(APPVEYOR_BUILD_VERSION).exe
-    - path: QuantumCore-Setup-latest.exe
-    - path: QuantumCore-v$(APPVEYOR_BUILD_VERSION)-portable.zip
-    - path: QuantumCore-latest-portable.zip
-    - path: SHA256SUMS.txt
+          # 8) Checksums
+          $out = @()
+          foreach ($f in @("QuantumCore-Setup-v$ver.exe","QuantumCore-Setup-latest.exe","QuantumCore-v$ver-portable.zip","QuantumCore-latest-portable.zip")) {
+            if (Test-Path $f) {
+              $h=(Get-FileHash $f -Algorithm SHA256).Hash
+              $out += "$h  $f"
+            }
+          }
+          Set-Content SHA256SUMS.txt ($out -join "`r`n") -Encoding ascii
 
-# ---------- UBUNTU: tar.gz ----------
--
-  matrix:
-    only:
-      - IMG: Ubuntu2204
-  image: Ubuntu2204
+    artifacts:
+      - path: QuantumCore-Setup-v$(APPVEYOR_BUILD_VERSION).exe
+      - path: QuantumCore-Setup-latest.exe
+      - path: QuantumCore-v$(APPVEYOR_BUILD_VERSION)-portable.zip
+      - path: QuantumCore-latest-portable.zip
+      - path: SHA256SUMS.txt
 
-  install:
-    - sh: |
-        set -e
-        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-        sudo apt-get install -y nodejs
-        if [ -f package.json ]; then npm ci || npm install; fi
+  # ---------- UBUNTU: tar.gz ----------
+  - matrix:
+      only:
+        - IMG: Ubuntu2204
+    image: Ubuntu2204
 
-  build_script:
-    - sh: |
-        set -e
-        if [ -f package.json ] && npm run | grep -q " build"; then npm run build; fi
-        OUT=release
-        mkdir -p "$OUT"
-        SRC=dist
-        [ -d build ] && SRC=build
-        [ ! -d "$SRC" ] && SRC=.
-        tar -C "$SRC" -czf "$OUT/QuantumCore-v${APPVEYOR_BUILD_VERSION}-linux.tar.gz" .
-        cp "$OUT/QuantumCore-v${APPVEYOR_BUILD_VERSION}-linux.tar.gz" "$OUT/QuantumCore-latest-linux.tar.gz"
-        (cd "$OUT" && (sha256sum QuantumCore-* > SHA256SUMS.txt || shasum -a 256 QuantumCore-* > SHA256SUMS.txt))
+    install:
+      - sh: |
+          set -e
+          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+          if [ -f package.json ]; then npm ci || npm install; fi
 
-  artifacts:
-    - path: release/**
+    build_script:
+      - sh: |
+          set -e
+          if [ -f package.json ] && npm run | grep -q " build"; then npm run build; fi
+          OUT=release
+          mkdir -p "$OUT"
+          SRC=dist
+          [ -d build ] && SRC=build
+          [ ! -d "$SRC" ] && SRC=.
+          tar -C "$SRC" -czf "$OUT/QuantumCore-v${APPVEYOR_BUILD_VERSION}-linux.tar.gz" .
+          cp "$OUT/QuantumCore-v${APPVEYOR_BUILD_VERSION}-linux.tar.gz" "$OUT/QuantumCore-latest-linux.tar.gz"
+          (cd "$OUT" && (sha256sum QuantumCore-* > SHA256SUMS.txt || shasum -a 256 QuantumCore-* > SHA256SUMS.txt))
+
+    artifacts:
+      - path: release/**
