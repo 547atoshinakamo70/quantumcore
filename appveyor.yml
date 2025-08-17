@@ -1,34 +1,92 @@
 version: "{build}"
-
-image: Visual Studio 2022
+build: off
+test: off
 
 environment:
-  nodejs_version: "18"
+  matrix:
+    - IMG: "Visual Studio 2022"
+    - IMG: "Ubuntu2204"
 
-install:
-  - ps: Install-Product node $env:nodejs_version
-  - npm install --legacy-peer-deps
+for:
+  - matrix:
+      only:
+        - IMG: "Visual Studio 2022"
+    image: "Visual Studio 2022"
 
-build: off  # Desactiva MSBuild
+    install:
+      - ps: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+          Install-Product node 20
+          if (Test-Path "package.json") {
+            npm ci
+            if ($LASTEXITCODE -ne 0) { npm install }
+          } else {
+            Write-Host "[warn] No package.json en la raiz"
+          }
 
-build_script:
-  - echo "Compilando QuantumCore con Electron Builder"
-  - npm run dist
+    build_script:
+      - ps: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+          $src = "dist"
+          if (-not (Test-Path $src)) {
+            if (Test-Path "build") { $src = "build" } else { $src = "." }
+          }
+          $ver = $env:APPVEYOR_BUILD_VERSION
+          $out1 = "QuantumCore-v$ver-windows.zip"
+          $out2 = "QuantumCore-latest-windows.zip"
+          if ($src -eq ".") {
+            $temp = "qc_pack"
+            if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }
+            New-Item -ItemType Directory -Force -Path $temp | Out-Null
+            robocopy . $temp /E /XD node_modules .git /XF appveyor.yml > $null
+            $code = $LASTEXITCODE
+            if ($code -gt 3) { throw "robocopy fallo $code" }
+            Compress-Archive -Path "$temp\*" -DestinationPath $out1 -Force
+          } else {
+            Compress-Archive -Path (Join-Path $src "*") -DestinationPath $out1 -Force
+          }
+          Copy-Item $out1 $out2 -Force
+          $lines = @()
+          foreach ($f in @($out1, $out2)) {
+            if (Test-Path $f) {
+              $h = (Get-FileHash $f -Algorithm SHA256).Hash
+              $lines += "$h  $f"
+            }
+          }
+          Set-Content "SHA256SUMS-windows.txt" ($lines -join "`r`n") -Encoding ascii
 
-artifacts:
-  - path: dist\*
-    name: installers
+    artifacts:
+      - path: "QuantumCore-v$(APPVEYOR_BUILD_VERSION)-windows.zip"
+      - path: "QuantumCore-latest-windows.zip"
+      - path: "SHA256SUMS-windows.txt"
 
-deploy:
-  provider: GitHub
-  release: v$(APPVEYOR_BUILD_VERSION)
-  description: "QuantumCore auto-build"
-  auth_token:
-    secure: %GITHUB_TOKEN%
-  artifact: installers
-  draft: false
-  prerelease: false
-  on:
-    branch: main
+  - matrix:
+      only:
+        - IMG: "Ubuntu2204"
+    image: "Ubuntu2204"
 
+    install:
+      - sh: |
+          set -e
+          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+          if [ -f package.json ]; then
+            npm ci || npm install
+          fi
 
+    build_script:
+      - sh: |
+          set -e
+          OUT="release"
+          mkdir -p "$OUT"
+          SRC="dist"
+          if [ -d build ]; then SRC="build"; fi
+          if [ ! -d "$SRC" ]; then SRC="."; fi
+          tar -C "$SRC" -czf "$OUT/QuantumCore-v${APPVEYOR_BUILD_VERSION}-linux.tar.gz" .
+          cp "$OUT/QuantumCore-v${APPVEYOR_BUILD_VERSION}-linux.tar.gz" "$OUT/QuantumCore-latest-linux.tar.gz"
+          (cd "$OUT" && (sha256sum QuantumCore-* > SHA256SUMS-linux.txt || shasum -a 256 QuantumCore-* > SHA256SUMS-linux.txt))
+
+    artifacts:
+      - path: "release/**"
