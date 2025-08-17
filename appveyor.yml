@@ -1,127 +1,55 @@
 version: "{build}"
+image: "Visual Studio 2022"
 build: off
 test: off
 
-environment:
-  matrix:
-    - IMG: "Visual Studio 2022"
-    - IMG: "Ubuntu2204"
+install:
+  - ps: |
+      $ErrorActionPreference = "Continue"
+      node -v
+      if (Test-Path "package.json") { cmd /c "npm install --no-fund --no-audit 2>&1" }
 
-for:
-  # ---------- WINDOWS: ZIP portable + checksums ----------
-  - matrix:
-      only:
-        - IMG: "Visual Studio 2022"
-    image: "Visual Studio 2022"
+build_script:
+  - ps: |
+      $ErrorActionPreference = "Stop"
 
-    install:
-      - ps: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = "Stop"
-          node -v
-          if (Test-Path "package.json") {
-            # Suprime warnings de npm y no abortes por stderr
-            $env:NODE_OPTIONS = "--no-warnings"
-            $env:NPM_CONFIG_LOGLEVEL = "error"
-            $prev = $ErrorActionPreference
-            $ErrorActionPreference = "Continue"
-            cmd /c "npm install --no-fund --no-audit --progress=false 2>&1"
-            $code = $LASTEXITCODE
-            $ErrorActionPreference = $prev
-            if ($code -ne 0) { Write-Warning "npm install devolvió $code; continuo empaquetado" }
-          } else {
-            Write-Host "[warn] No package.json en la raiz"
-          }
+      # 1) Detectar carpeta a empaquetar
+      $src = "dist"
+      if (-not (Test-Path $src)) {
+        if (Test-Path "build") { $src = "build" } else { $src = "." }
+      }
 
-    build_script:
-      - ps: |
-        Set-StrictMode -Version Latest
-        $ErrorActionPreference = "Stop"
+      # 2) Nombres de salida
+      $ver = $env:APPVEYOR_BUILD_VERSION
+      $out1 = "QuantumCore-v$ver-windows.zip"
+      $out2 = "QuantumCore-latest-windows.zip"
 
-        # 1) Build si existe script
-        $hasBuild = $false
-        if (Test-Path package.json) {
-          $env:NPM_CONFIG_LOGLEVEL = "error"
-          $hasBuild = (cmd /c npm run | Select-String -Pattern " build") -ne $null
-          if ($hasBuild) {
-            $prev = $ErrorActionPreference
-            $ErrorActionPreference = "Continue"
-            cmd /c "npm run build 2>&1"
-            $bcode = $LASTEXITCODE
-            $ErrorActionPreference = $prev
-            if ($bcode -ne 0) { Write-Warning "npm run build devolvió $bcode; empaqueto el árbol actual" }
-          } else {
-            Write-Host "[info] sin script build"
-          }
+      # 3) Empaquetar
+      if ($src -eq ".") {
+        $temp = "qc_pack"
+        if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }
+        New-Item -ItemType Directory -Force -Path $temp | Out-Null
+        robocopy . $temp /E /XD node_modules .git /XF appveyor.yml > $null
+        $code = $LASTEXITCODE
+        if ($code -gt 3) { Write-Warning "robocopy code $code" }
+        Compress-Archive -Path "$temp\*" -DestinationPath $out1 -Force
+      } else {
+        Compress-Archive -Path (Join-Path $src "*") -DestinationPath $out1 -Force
+      }
+
+      Copy-Item $out1 $out2 -Force
+
+      # 4) Checksums
+      $lines = @()
+      foreach ($f in @($out1, $out2)) {
+        if (Test-Path $f) {
+          $h = (Get-FileHash $f -Algorithm SHA256).Hash
+          $lines += "$h  $f"
         }
+      }
+      Set-Content "SHA256SUMS-windows.txt" ($lines -join "`r`n") -Encoding ascii
 
-        # 2) Elegir carpeta de salida
-        $src = "dist"
-        if (-not (Test-Path $src)) {
-          if (Test-Path "build") { $src = "build" } else { $src = "." }
-        }
-
-        # 3) Empaquetar
-        $ver = $env:APPVEYOR_BUILD_VERSION
-        $out1 = "QuantumCore-v$ver-windows.zip"
-        $out2 = "QuantumCore-latest-windows.zip"
-
-        if ($src -eq ".") {
-          $temp = "qc_pack"
-          if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }
-          New-Item -ItemType Directory -Force -Path $temp | Out-Null
-          robocopy . $temp /E /XD node_modules .git /XF appveyor.yml > $null
-          $code = $LASTEXITCODE
-          if ($code -gt 3) { Write-Warning "robocopy código $code; continúo" }
-          Compress-Archive -Path "$temp\*" -DestinationPath $out1 -Force
-        } else {
-          Compress-Archive -Path (Join-Path $src "*") -DestinationPath $out1 -Force
-        }
-
-        Copy-Item $out1 $out2 -Force
-
-        # 4) Checksums
-        $lines = @()
-        foreach ($f in @($out1, $out2)) {
-          if (Test-Path $f) {
-            $h = (Get-FileHash $f -Algorithm SHA256).Hash
-            $lines += "$h  $f"
-          }
-        }
-        Set-Content "SHA256SUMS-windows.txt" ($lines -join "`r`n") -Encoding ascii
-
-    artifacts:
-      - path: "QuantumCore-v$(APPVEYOR_BUILD_VERSION)-windows.zip"
-      - path: "QuantumCore-latest-windows.zip"
-      - path: "SHA256SUMS-windows.txt"
-
-  # ---------- UBUNTU: .tar.gz + checksums ----------
-  - matrix:
-      only:
-        - IMG: "Ubuntu2204"
-    image: "Ubuntu2204"
-
-    install:
-      - sh: |
-          set -e
-          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-          sudo apt-get install -y nodejs
-          if [ -f package.json ]; then
-            npm ci || npm install
-          fi
-
-    build_script:
-      - sh: |
-          set -e
-          OUT="release"
-          mkdir -p "$OUT"
-          SRC="dist"
-          if [ -f package.json ] && npm run | grep -q " build"; then npm run build; fi
-          if [ -d build ]; then SRC="build"; fi
-          if [ ! -d "$SRC" ]; then SRC="."; fi
-          tar -C "$SRC" -czf "$OUT/QuantumCore-v${APPVEYOR_BUILD_VERSION}-linux.tar.gz" .
-          cp "$OUT/QuantumCore-v${APPVEYOR_BUILD_VERSION}-linux.tar.gz" "$OUT/QuantumCore-latest-linux.tar.gz"
-          (cd "$OUT" && (sha256sum QuantumCore-* > SHA256SUMS-linux.txt || shasum -a 256 QuantumCore-* > SHA256SUMS-linux.txt))
-
-    artifacts:
-      - path: "release/**"
+artifacts:
+  - path: QuantumCore-v$(APPVEYOR_BUILD_VERSION)-windows.zip
+  - path: QuantumCore-latest-windows.zip
+  - path: SHA256SUMS-windows.txt
