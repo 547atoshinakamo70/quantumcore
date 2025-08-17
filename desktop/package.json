@@ -1,0 +1,36 @@
+{
+  "name": "quantumcore-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "postinstall": "electron-builder install-app-deps",
+    "pack:win": "electron-builder --win nsis",
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "29.4.0",
+    "electron-builder": "24.13.3"
+  },
+  "build": {
+    "appId": "com.quantumcore.app",
+    "productName": "QuantumCore",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "app/**",
+      "package.json"
+    ],
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "QuantumCore-Setup-${version}.exe"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
