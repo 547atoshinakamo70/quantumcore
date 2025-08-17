@@ -10,12 +10,16 @@ environment:
     secure: REPLACE_IN_APPVEYOR_UI
   VITE_POLYGON_RPC:
     secure: REPLACE_IN_APPVEYOR_UI
-  VITE_BNB_RPC: https://bsc-dataseed1.binance.org
+  VITE_BNB_RPC:
+    secure: REPLACE_IN_APPVEYOR_UI
   VITE_COSMOS_RPC:
     secure: REPLACE_IN_APPVEYOR_UI
-  VITE_COSMOS_DENOM: uatom
-  VITE_BTC_API: https://mempool.space/api
-  VITE_DAG_NODE: https://api.constellationnetwork.io
+  VITE_COSMOS_DENOM:
+    secure: REPLACE_IN_APPVEYOR_UI
+  VITE_BTC_API:
+    secure: REPLACE_IN_APPVEYOR_UI
+  VITE_DAG_NODE:
+    secure: REPLACE_IN_APPVEYOR_UI
 
 init:
   - ps: |
