@@ -1,89 +1,33 @@
-version: "{build}"
-image: "Visual Studio 2022"
-build: off
-test: off
+image: Visual Studio 2022
 
-# Cache acelera npm
-cache:
-  - node_modules -> package-lock.json
-  - desktop\node_modules -> desktop\package-lock.json
+environment:
+  NODE_VERSION: 20
 
 install:
   - ps: |
-      # No paramos por warnings de npm
-      $ErrorActionPreference = "Continue"
-      node -v
-
-      # Instala deps de la web (si hay package.json)
-      if (Test-Path "package.json") {
-        $env:NODE_OPTIONS = "--no-warnings"
-        $env:NPM_CONFIG_LOGLEVEL = "error"
-        cmd /c "npm install --no-fund --no-audit 2>&1"
-      } else {
-        Write-Host "[info] No hay package.json en raiz (ok si es web estática)."
-      }
-
-      # Instala deps del desktop (Electron kit)
-      if (Test-Path "desktop\package.json") {
-        Push-Location desktop
-        $env:NODE_OPTIONS = "--no-warnings"
-        $env:NPM_CONFIG_LOGLEVEL = "error"
-        cmd /c "npm install --no-fund --no-audit 2>&1"
-        Pop-Location
-      } else {
-        Write-Host "[error] Falta carpeta 'desktop' con package.json. Sube el kit Electron."
-      }
+      Set-StrictMode -Version Latest
+      $ErrorActionPreference = "Stop"
+      Install-Product node $env:NODE_VERSION
+      cd web
+      npm ci
+      npm run build
+      cd ..
+      cd desktop
+      npm ci
+      cd ..
 
 build_script:
   - ps: |
-      $ErrorActionPreference = "Stop"
-
-      # 1) Construir web si existe script "build"
-      $hasBuild = $false
-      if (Test-Path package.json) {
-        $hasBuild = (cmd /c npm run | Select-String -Pattern " build") -ne $null
-        if ($hasBuild) {
-          $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-          cmd /c "npm run build 2>&1"
-          $ErrorActionPreference = $prev
-        } else {
-          Write-Host "[info] sin script build; empaquetaremos el árbol actual"
-        }
-      }
-
-      # 2) Elegir carpeta fuente para copiar a desktop/app
-      $src = "dist"
-      if (-not (Test-Path $src)) { if (Test-Path "build") { $src = "build" } else { $src = "." } }
-
-      if (-not (Test-Path "desktop")) { throw "Falta carpeta 'desktop'. Añade el kit Electron al repo." }
-
-      # 3) Copiar la web a desktop/app (excluye node_modules y .git)
-      if (Test-Path "desktop\app") { Remove-Item -Recurse -Force "desktop\app" }
-      New-Item -ItemType Directory -Force -Path "desktop\app" | Out-Null
-      robocopy $src desktop\app /E /XD node_modules .git | Out-Host
-      $rc = $LASTEXITCODE; if ($rc -gt 3) { Write-Warning "robocopy code $rc" }
-
-      # 4) Construir instalador con electron-builder
+      if (Test-Path 'desktop\\app') { Remove-Item -Recurse -Force 'desktop\\app' }
+      New-Item -ItemType Directory -Force -Path 'desktop\\app' | Out-Null
+      robocopy web\\dist desktop\\app /E | Out-Host
+      Copy-Item desktop\\package.json desktop\\package.json.bak -Force
       Push-Location desktop
-      cmd /c "npm run pack:win 2>&1"
-      $ver = $env:APPVEYOR_BUILD_VERSION
-      $built = Get-ChildItem "release\*.exe" | Select-Object -First 1
-      if (-not $built) { throw "No se generó el .exe en desktop\release" }
-      Copy-Item $built.FullName "..\QuantumCore-Setup-v$ver.exe" -Force
-      Copy-Item $built.FullName "..\QuantumCore-Setup-latest.exe" -Force
+      cmd /c "npm run pack:win"
+      $exe = Get-ChildItem release\\*.exe | Select-Object -First 1
+      Copy-Item $exe.FullName "..\\QuantumCore-Setup-latest.exe" -Force
       Pop-Location
 
-      # 5) Checksums
-      $lines = @()
-      foreach ($f in @("QuantumCore-Setup-v$ver.exe","QuantumCore-Setup-latest.exe")) {
-        if (Test-Path $f) {
-          $h = (Get-FileHash $f -Algorithm SHA256).Hash
-          $lines += "$h  $f"
-        }
-      }
-      Set-Content "SHA256SUMS-windows.txt" ($lines -join "`r`n") -Encoding ascii
-
 artifacts:
-  - path: "QuantumCore-Setup-v$(APPVEYOR_BUILD_VERSION).exe"
-  - path: "QuantumCore-Setup-latest.exe"
-  - path: "SHA256SUMS-windows.txt"
+  - path: QuantumCore-Setup-latest.exe
+    name: QuantumCore-Setup
