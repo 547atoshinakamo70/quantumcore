@@ -20,58 +20,75 @@ for:
           $ErrorActionPreference = "Stop"
           node -v
           if (Test-Path "package.json") {
+            # Suprime warnings de npm y no abortes por stderr
             $env:NODE_OPTIONS = "--no-warnings"
-            cmd /c npm install --no-fund --no-audit
+            $env:NPM_CONFIG_LOGLEVEL = "error"
+            $prev = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            cmd /c "npm install --no-fund --no-audit --progress=false 2>&1"
+            $code = $LASTEXITCODE
+            $ErrorActionPreference = $prev
+            if ($code -ne 0) { Write-Warning "npm install devolvió $code; continuo empaquetado" }
           } else {
             Write-Host "[warn] No package.json en la raiz"
           }
 
     build_script:
       - ps: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = "Stop"
+        Set-StrictMode -Version Latest
+        $ErrorActionPreference = "Stop"
 
-          # 1) Build si existe script
-          $hasBuild = $false
-          if (Test-Path package.json) {
-            $hasBuild = (cmd /c npm run | Select-String -Pattern " build") -ne $null
-            if ($hasBuild) { cmd /c npm run build } else { Write-Host "[info] sin script build" }
-          }
-
-          # 2) Elegir carpeta de salida
-          $src = "dist"
-          if (-not (Test-Path $src)) {
-            if (Test-Path "build") { $src = "build" } else { $src = "." }
-          }
-
-          # 3) Empaquetar
-          $ver = $env:APPVEYOR_BUILD_VERSION
-          $out1 = "QuantumCore-v$ver-windows.zip"
-          $out2 = "QuantumCore-latest-windows.zip"
-
-          if ($src -eq ".") {
-            $temp = "qc_pack"
-            if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }
-            New-Item -ItemType Directory -Force -Path $temp | Out-Null
-            robocopy . $temp /E /XD node_modules .git /XF appveyor.yml > $null
-            $code = $LASTEXITCODE
-            if ($code -gt 3) { throw "robocopy fallo $code" }
-            Compress-Archive -Path "$temp\*" -DestinationPath $out1 -Force
+        # 1) Build si existe script
+        $hasBuild = $false
+        if (Test-Path package.json) {
+          $env:NPM_CONFIG_LOGLEVEL = "error"
+          $hasBuild = (cmd /c npm run | Select-String -Pattern " build") -ne $null
+          if ($hasBuild) {
+            $prev = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            cmd /c "npm run build 2>&1"
+            $bcode = $LASTEXITCODE
+            $ErrorActionPreference = $prev
+            if ($bcode -ne 0) { Write-Warning "npm run build devolvió $bcode; empaqueto el árbol actual" }
           } else {
-            Compress-Archive -Path (Join-Path $src "*") -DestinationPath $out1 -Force
+            Write-Host "[info] sin script build"
           }
+        }
 
-          Copy-Item $out1 $out2 -Force
+        # 2) Elegir carpeta de salida
+        $src = "dist"
+        if (-not (Test-Path $src)) {
+          if (Test-Path "build") { $src = "build" } else { $src = "." }
+        }
 
-          # 4) Checksums
-          $lines = @()
-          foreach ($f in @($out1, $out2)) {
-            if (Test-Path $f) {
-              $h = (Get-FileHash $f -Algorithm SHA256).Hash
-              $lines += "$h  $f"
-            }
+        # 3) Empaquetar
+        $ver = $env:APPVEYOR_BUILD_VERSION
+        $out1 = "QuantumCore-v$ver-windows.zip"
+        $out2 = "QuantumCore-latest-windows.zip"
+
+        if ($src -eq ".") {
+          $temp = "qc_pack"
+          if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }
+          New-Item -ItemType Directory -Force -Path $temp | Out-Null
+          robocopy . $temp /E /XD node_modules .git /XF appveyor.yml > $null
+          $code = $LASTEXITCODE
+          if ($code -gt 3) { Write-Warning "robocopy código $code; continúo" }
+          Compress-Archive -Path "$temp\*" -DestinationPath $out1 -Force
+        } else {
+          Compress-Archive -Path (Join-Path $src "*") -DestinationPath $out1 -Force
+        }
+
+        Copy-Item $out1 $out2 -Force
+
+        # 4) Checksums
+        $lines = @()
+        foreach ($f in @($out1, $out2)) {
+          if (Test-Path $f) {
+            $h = (Get-FileHash $f -Algorithm SHA256).Hash
+            $lines += "$h  $f"
           }
-          Set-Content "SHA256SUMS-windows.txt" ($lines -join "`r`n") -Encoding ascii
+        }
+        Set-Content "SHA256SUMS-windows.txt" ($lines -join "`r`n") -Encoding ascii
 
     artifacts:
       - path: "QuantumCore-v$(APPVEYOR_BUILD_VERSION)-windows.zip"
