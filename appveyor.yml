@@ -21,8 +21,7 @@ for:
           node -v
           if (Test-Path "package.json") {
             $env:NODE_OPTIONS = "--no-warnings"
-            cmd /c npm ci --no-fund --no-audit
-            if ($LASTEXITCODE -ne 0) { cmd /c npm install --no-fund --no-audit }
+            cmd /c npm install --no-fund --no-audit
           } else {
             Write-Host "[warn] No package.json en la raiz"
           }
@@ -36,8 +35,7 @@ for:
           $hasBuild = $false
           if (Test-Path package.json) {
             $hasBuild = (cmd /c npm run | Select-String -Pattern " build") -ne $null
-            if ($hasBuild) { cmd /c npm run build }
-            else { Write-Host "[info] sin script build" }
+            if ($hasBuild) { cmd /c npm run build } else { Write-Host "[info] sin script build" }
           }
 
           # 2) Elegir carpeta de salida
