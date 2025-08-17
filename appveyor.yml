@@ -7,7 +7,7 @@ environment:
     - IMG: Visual Studio 2022
     - IMG: Ubuntu2204
 
-# ===== Windows: crea instalador .exe con NSIS =====
+# ---------- WINDOWS: instalador NSIS + portable ZIP ----------
 for:
 -
   matrix:
@@ -21,60 +21,97 @@ for:
         if exist package.json (
           npm ci || npm install
         ) else (
-          echo [warn] No package.json
+          echo [warn] No package.json en la raiz
         )
-        choco install nsis -y
+        choco install nsis -y --no-progress
 
   build_script:
-    - cmd: |
-        REM --- Build frontend (opcional; ajusta si tu build es distinto) ---
-        if exist package.json (
-          call npm run | findstr /I " build" >nul
-          if %errorlevel%==0 ( npm run build ) else ( echo [info] sin script build )
-        )
+    - ps: |
+        Set-StrictMode -Version Latest
+        $ErrorActionPreference = 'Stop'
 
-        REM --- NSIS script "installer.nsi" ---
-        > installer.nsi echo !include "MUI2.nsh"
-        >> installer.nsi echo Name "QuantumCore"
-        >> installer.nsi echo OutFile "QuantumCore-Setup-v%APPVEYOR_BUILD_VERSION%.exe"
-        >> installer.nsi echo InstallDir "$PROGRAMFILES\\QuantumCore"
-        >> installer.nsi echo RequestExecutionLevel admin
-        >> installer.nsi echo ^!define MUI_ABORTWARNING
-        >> installer.nsi echo ^!insertmacro MUI_PAGE_DIRECTORY
-        >> installer.nsi echo ^!insertmacro MUI_PAGE_INSTFILES
-        >> installer.nsi echo ^!insertmacro MUI_LANGUAGE "English"
-        >> installer.nsi echo Section "Install"
-        >> installer.nsi echo   SetOutPath "$INSTDIR"
-        >> installer.nsi echo   File /r "dist\\*.*"
-        >> installer.nsi echo   CreateDirectory "$SMPROGRAMS\\QuantumCore"
-        >> installer.nsi echo   IfFileExists "$INSTDIR\\index.html" 0 +3
-        >> installer.nsi echo     CreateShortCut "$DESKTOP\\QuantumCore.lnk" "$INSTDIR\\index.html"
-        >> installer.nsi echo     Goto +2
-        >> installer.nsi echo     CreateShortCut "$DESKTOP\\QuantumCore.lnk" "$INSTDIR"
-        >> installer.nsi echo   IfFileExists "$INSTDIR\\index.html" 0 +3
-        >> installer.nsi echo     CreateShortCut "$SMPROGRAMS\\QuantumCore\\QuantumCore.lnk" "$INSTDIR\\index.html"
-        >> installer.nsi echo     Goto +2
-        >> installer.nsi echo     CreateShortCut "$SMPROGRAMS\\QuantumCore\\QuantumCore.lnk" "$INSTDIR"
-        >> installer.nsi echo SectionEnd
+        # 1) Build (si existe script)
+        if (Test-Path package.json) {
+          $hasBuild=(npm run | Select-String -Pattern ' build') -ne $null
+          if ($hasBuild) { npm run build } else { Write-Host "[info] sin script build" }
+        }
 
-        "C:\Program Files (x86)\NSIS\makensis.exe" /V2 installer.nsi
+        # 2) Asegurar carpeta de salida
+        $dist = "dist"
+        if (-not (Test-Path $dist)) {
+          if (Test-Path "build") {
+            Write-Host "[info] usando carpeta 'build' como 'dist'"
+            Rename-Item -Path "build" -NewName "dist"
+          } else {
+            Write-Host "[info] creando 'dist' y copiando proyecto (sin node_modules/.git)"
+            New-Item -ItemType Directory -Force -Path $dist | Out-Null
+            robocopy . dist /E /XD node_modules .git /XF appveyor.yml installer.nsi || (if ($LASTEXITCODE -le 3) {{ exit 0 }} else {{ exit $LASTEXITCODE }})
+          }
+        }
 
-        REM --- Copia con alias "latest" ---
-        copy /Y "QuantumCore-Setup-v%APPVEYOR_BUILD_VERSION%.exe" "QuantumCore-Setup-latest.exe"
+        # 3) Comprobar NSIS
+        $makensis = 'C:\Program Files (x86)\NSIS\makensis.exe'
+        if (-not (Test-Path $makensis)) {
+          $makensis = 'C:\Program Files (x86)\NSIS\Bin\makensis.exe'
+        }
+        if (-not (Test-Path $makensis)) {
+          throw "NSIS no encontrado. Revisa instalación de choco nsis."
+        }
 
-        REM --- Checksums ---
-        powershell -NoProfile -Command ^
-          "$h1=(Get-FileHash 'QuantumCore-Setup-v%APPVEYOR_BUILD_VERSION%.exe' -Algorithm SHA256).Hash; ^
-           $h2=(Get-FileHash 'QuantumCore-Setup-latest.exe' -Algorithm SHA256).Hash; ^
-           Set-Content SHA256SUMS.txt ($h1+'  QuantumCore-Setup-v%APPVEYOR_BUILD_VERSION%.exe'); ^
-           Add-Content SHA256SUMS.txt ($h2+'  QuantumCore-Setup-latest.exe')"
+        # 4) Generar script NSIS
+        $ver = $env:APPVEYOR_BUILD_VERSION
+        $nsi = @"
+!include "MUI2.nsh"
+Name "QuantumCore"
+OutFile "QuantumCore-Setup-v$ver.exe"
+InstallDir "$PROGRAMFILES\QuantumCore"
+RequestExecutionLevel admin
+!define MUI_ABORTWARNING
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_LANGUAGE "English"
+Section "Install"
+  SetOutPath "$INSTDIR"
+  File /r "dist\*.*"
+  CreateDirectory "$SMPROGRAMS\QuantumCore"
+  IfFileExists "$INSTDIR\index.html" +2 0
+    CreateShortCut "$DESKTOP\QuantumCore.lnk" "$INSTDIR\index.html"
+  IfFileExists "$INSTDIR\index.html" +2 0
+    CreateShortCut "$SMPROGRAMS\QuantumCore\QuantumCore.lnk" "$INSTDIR\index.html"
+SectionEnd
+"@
+        Set-Content -Path installer.nsi -Value $nsi -Encoding ascii
+
+        # 5) Compilar instalador
+        & "$makensis" /V2 installer.nsi
+
+        # 6) Alias "latest"
+        Copy-Item "QuantumCore-Setup-v$ver.exe" "QuantumCore-Setup-latest.exe" -Force
+
+        # 7) Portable ZIP (opcional pero útil)
+        if (Test-Path dist) {
+          powershell -Command "Compress-Archive -Path dist\* -DestinationPath QuantumCore-v$ver-portable.zip -Force"
+          Copy-Item "QuantumCore-v$ver-portable.zip" "QuantumCore-latest-portable.zip" -Force
+        }
+
+        # 8) Checksums
+        $out = @()
+        foreach ($f in @("QuantumCore-Setup-v$ver.exe","QuantumCore-Setup-latest.exe","QuantumCore-v$ver-portable.zip","QuantumCore-latest-portable.zip")) {
+          if (Test-Path $f) {
+            $h=(Get-FileHash $f -Algorithm SHA256).Hash
+            $out += "$h  $f"
+          }
+        }
+        Set-Content SHA256SUMS.txt ($out -join "`r`n") -Encoding ascii
 
   artifacts:
     - path: QuantumCore-Setup-v$(APPVEYOR_BUILD_VERSION).exe
     - path: QuantumCore-Setup-latest.exe
+    - path: QuantumCore-v$(APPVEYOR_BUILD_VERSION)-portable.zip
+    - path: QuantumCore-latest-portable.zip
     - path: SHA256SUMS.txt
 
-# ===== Linux: empaqueta .tar.gz =====
+# ---------- UBUNTU: tar.gz ----------
 -
   matrix:
     only:
@@ -86,20 +123,20 @@ for:
         set -e
         curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
         sudo apt-get install -y nodejs
-        if [ -f package.json ]; then
-          npm ci || npm install
-        fi
+        if [ -f package.json ]; then npm ci || npm install; fi
 
   build_script:
     - sh: |
         set -e
-        if [ -f package.json ] && npm run | grep -q " build"; then
-          npm run build
-        fi
-        mkdir -p release
-        tar -C dist -czf release/QuantumCore-v$(APPVEYOR_BUILD_VERSION)-linux.tar.gz .
-        cp release/QuantumCore-v$(APPVEYOR_BUILD_VERSION)-linux.tar.gz release/QuantumCore-latest-linux.tar.gz
-        (cd release && sha256sum QuantumCore-* > SHA256SUMS.txt || shasum -a 256 QuantumCore-* > SHA256SUMS.txt)
+        if [ -f package.json ] && npm run | grep -q " build"; then npm run build; fi
+        OUT=release
+        mkdir -p "$OUT"
+        SRC=dist
+        [ -d build ] && SRC=build
+        [ ! -d "$SRC" ] && SRC=.
+        tar -C "$SRC" -czf "$OUT/QuantumCore-v${APPVEYOR_BUILD_VERSION}-linux.tar.gz" .
+        cp "$OUT/QuantumCore-v${APPVEYOR_BUILD_VERSION}-linux.tar.gz" "$OUT/QuantumCore-latest-linux.tar.gz"
+        (cd "$OUT" && (sha256sum QuantumCore-* > SHA256SUMS.txt || shasum -a 256 QuantumCore-* > SHA256SUMS.txt))
 
   artifacts:
     - path: release/**
