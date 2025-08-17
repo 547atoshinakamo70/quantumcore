@@ -20,8 +20,9 @@ for:
           $ErrorActionPreference = "Stop"
           node -v
           if (Test-Path "package.json") {
-            npm ci
-            if ($LASTEXITCODE -ne 0) { npm install }
+            $env:NODE_OPTIONS = "--no-warnings"
+            cmd /c npm ci --no-fund --no-audit
+            if ($LASTEXITCODE -ne 0) { cmd /c npm install --no-fund --no-audit }
           } else {
             Write-Host "[warn] No package.json en la raiz"
           }
@@ -32,9 +33,11 @@ for:
           $ErrorActionPreference = "Stop"
 
           # 1) Build si existe script
+          $hasBuild = $false
           if (Test-Path package.json) {
-            $hasBuild = (npm run | Select-String -Pattern ' build') -ne $null
-            if ($hasBuild) { npm run build } else { Write-Host "[info] sin script build" }
+            $hasBuild = (cmd /c npm run | Select-String -Pattern " build") -ne $null
+            if ($hasBuild) { cmd /c npm run build }
+            else { Write-Host "[info] sin script build" }
           }
 
           # 2) Elegir carpeta de salida
