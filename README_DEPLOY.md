@@ -26,6 +26,7 @@ Define en **AppVeyor → Settings → Environment** (ocultas/secure):
 - `VITE_BTC_API`, `VITE_DAG_NODE`
 
 *(Para uso local: `web/.env` con los mismos nombres — no subirlo a Git)*
+*El `appveyor.yml` solo contiene `secure: REPLACE_IN_APPVEYOR_UI`; debes ingresar los valores reales en la UI de AppVeyor.*
 
 ## 3) Build local (prueba rápida)
 ```bash
