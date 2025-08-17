@@ -32,13 +32,21 @@ install:
 
       # 1) Build web (React + Vite)
       Push-Location web
-      if (Test-Path "package-lock.json") { cmd /c "npm ci --no-fund --no-audit" } else { cmd /c "npm install --no-fund --no-audit" }
+      if (Test-Path "package-lock.json") {
+        cmd /c "npm ci --no-fund --no-audit"
+      } else {
+        cmd /c "npm install --no-fund --no-audit"
+      }
       cmd /c "npm run build"
       Pop-Location
 
       # 2) Prepare Electron (desktop)
       Push-Location desktop
-      if (Test-Path "package-lock.json") { cmd /c "npm ci --no-fund --no-audit" } else { cmd /c "npm install --no-fund --no-audit" }
+      if (Test-Path "package-lock.json") {
+        cmd /c "npm ci --no-fund --no-audit"
+      } else {
+        cmd /c "npm install --no-fund --no-audit"
+      }
       Pop-Location
 
 build_script:
