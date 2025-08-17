@@ -8,6 +8,7 @@ environment:
     - IMG: "Ubuntu2204"
 
 for:
+  # ---------- WINDOWS: ZIP portable + checksums ----------
   - matrix:
       only:
         - IMG: "Visual Studio 2022"
@@ -17,7 +18,7 @@ for:
       - ps: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
-          Install-Product node 20
+          node -v
           if (Test-Path "package.json") {
             npm ci
             if ($LASTEXITCODE -ne 0) { npm install }
@@ -29,13 +30,24 @@ for:
       - ps: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
+
+          # 1) Build si existe script
+          if (Test-Path package.json) {
+            $hasBuild = (npm run | Select-String -Pattern ' build') -ne $null
+            if ($hasBuild) { npm run build } else { Write-Host "[info] sin script build" }
+          }
+
+          # 2) Elegir carpeta de salida
           $src = "dist"
           if (-not (Test-Path $src)) {
             if (Test-Path "build") { $src = "build" } else { $src = "." }
           }
+
+          # 3) Empaquetar
           $ver = $env:APPVEYOR_BUILD_VERSION
           $out1 = "QuantumCore-v$ver-windows.zip"
           $out2 = "QuantumCore-latest-windows.zip"
+
           if ($src -eq ".") {
             $temp = "qc_pack"
             if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }
@@ -47,7 +59,10 @@ for:
           } else {
             Compress-Archive -Path (Join-Path $src "*") -DestinationPath $out1 -Force
           }
+
           Copy-Item $out1 $out2 -Force
+
+          # 4) Checksums
           $lines = @()
           foreach ($f in @($out1, $out2)) {
             if (Test-Path $f) {
@@ -62,6 +77,7 @@ for:
       - path: "QuantumCore-latest-windows.zip"
       - path: "SHA256SUMS-windows.txt"
 
+  # ---------- UBUNTU: .tar.gz + checksums ----------
   - matrix:
       only:
         - IMG: "Ubuntu2204"
@@ -82,6 +98,7 @@ for:
           OUT="release"
           mkdir -p "$OUT"
           SRC="dist"
+          if [ -f package.json ] && npm run | grep -q " build"; then npm run build; fi
           if [ -d build ]; then SRC="build"; fi
           if [ ! -d "$SRC" ]; then SRC="."; fi
           tar -C "$SRC" -czf "$OUT/QuantumCore-v${APPVEYOR_BUILD_VERSION}-linux.tar.gz" .
