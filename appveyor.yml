@@ -27,9 +27,15 @@ init:
 install:
   - ps: |
       # --- Node con tolerancia a stderr benigno ---
-      $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-      try { Install-Product node $env:NODE_VERSION -ErrorAction SilentlyContinue } catch { Write-Host "[warn] Install-Product: $($_.Exception.Message)" }
-      $ErrorActionPreference = $prev
+      $prev = $ErrorActionPreference
+      $ErrorActionPreference = 'Continue'
+      try {
+        Install-Product node $env:NODE_VERSION -ErrorAction SilentlyContinue
+      } catch {
+        Write-Host "[warn] Install-Product: $($_.Exception.Message)"
+      } finally {
+        $ErrorActionPreference = $prev
+      }
 
       try { node -v; npm -v } catch {
         Write-Host "[warn] Node no disponible; instalando LTS con choco..."
@@ -38,41 +44,43 @@ install:
         node -v; npm -v
       }
 
-      # --- WEB: prepara configs ESM/CJS y deps ---
+      # --- WEB: preparar configs y deps ---
       Push-Location web
 
-      # 1) Si el proyecto es ESM ("type":"module"), renombra configs .js -> .cjs para evitar "module is not defined"
+      # 1) Si el proyecto es ESM ("type":"module"), renombra configs .js -> .cjs
       $pkgJson = Get-Content package.json -Raw | ConvertFrom-Json
-      $isEsm = $pkgJson.PSObject.Properties.Name -contains "type" -and $pkgJson.type -eq "module"
+      $isEsm = ($pkgJson.PSObject.Properties.Name -contains 'type') -and ($pkgJson.type -eq 'module')
 
       if ($isEsm) {
         if (Test-Path "postcss.config.js") { Rename-Item -Force "postcss.config.js" "postcss.config.cjs" }
         if (Test-Path "tailwind.config.js") { Rename-Item -Force "tailwind.config.js" "tailwind.config.cjs" }
       }
 
-      # 2) Asegura postcss/tailwind configs (CJS)
-      if (!(Test-Path "postcss.config.cjs")) {
-        Set-Content -Encoding ASCII "postcss.config.cjs" (@"
+      # 2) Crear configs por defecto si no existen (CJS)
+      if (-not (Test-Path "postcss.config.cjs")) {
+        $pc = @"
 module.exports = {
   plugins: {
     tailwindcss: {},
     autoprefixer: {},
   },
 };
-"@)
+"@
+        Set-Content -Path "postcss.config.cjs" -Value $pc -Encoding ASCII
       }
-      if (!(Test-Path "tailwind.config.cjs")) {
-        Set-Content -Encoding ASCII "tailwind.config.cjs" (@"
+      if (-not (Test-Path "tailwind.config.cjs")) {
+        $tw = @"
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ['./index.html','./src/**/*.{ts,tsx}'],
   theme: { extend: {} },
   plugins: [],
 };
-"@)
+"@
+        Set-Content -Path "tailwind.config.cjs" -Value $tw -Encoding ASCII
       }
 
-      # 3) Dependencias
+      # 3) Dependencias (y asegurar @vitejs/plugin-react)
       if (Test-Path "package-lock.json") {
         cmd /c "npm ci --no-fund --no-audit"
       } else {
@@ -82,15 +90,20 @@ module.exports = {
         cmd /c "npm i -D @vitejs/plugin-react --no-fund --no-audit"
       }
 
-      # 4) Build
+      # 4) Build Vite
       cmd /c "npm run build"
       if (-not (Test-Path "dist")) { throw "No se generó web/dist; revisa Vite" }
-      Pop-Location
+
+      Pop-Location  # web
 
       # --- DESKTOP: deps ---
       Push-Location desktop
-      if (Test-Path "package-lock.json") { cmd /c "npm ci --no-fund --no-audit" } else { cmd /c "npm install --no-fund --no-audit" }
-      Pop-Location
+      if (Test-Path "package-lock.json") {
+        cmd /c "npm ci --no-fund --no-audit"
+      } else {
+        cmd /c "npm install --no-fund --no-audit"
+      }
+      Pop-Location  # desktop
 
 build_script:
   - ps: |
