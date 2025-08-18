@@ -2,25 +2,22 @@ version: '{build}'
 image: Visual Studio 2022
 test: off
 
-# Solo construye main y ramas de release
 branches:
   only:
     - main
     - release/*
 
-# No construir tags
 skip_tags: true
 clone_depth: 1
 shallow_clone: true
 
-# Cache para acelerar
 cache:
   - web\node_modules -> web\package-lock.json
   - desktop\node_modules -> desktop\package-lock.json
 
 environment:
   NODE_VERSION: 20
-  CSC_IDENTITY_AUTO_DISCOVERY: false  # evita intentos de code signing
+  CSC_IDENTITY_AUTO_DISCOVERY: false
 
 init:
   - ps: |
@@ -29,47 +26,39 @@ init:
 
 install:
   - ps: |
-      # --- Instalar Node con tolerancia a mensajes de stderr "The operation completed successfully." ---
-      $prev = $ErrorActionPreference
-      $ErrorActionPreference = 'Continue'
-      try {
-        Install-Product node $env:NODE_VERSION -ErrorAction SilentlyContinue
-      } catch {
-        Write-Host "[warn] Install-Product lanzó excepción: $($_.Exception.Message)"
-      } finally {
-        $ErrorActionPreference = $prev
-      }
+      # --- Node con tolerancia a stderr benigno ---
+      $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+      try { Install-Product node $env:NODE_VERSION -ErrorAction SilentlyContinue } catch { Write-Host "[warn] Install-Product: $($_.Exception.Message)" }
+      $ErrorActionPreference = $prev
 
-      # Verifica Node/NPM; si algo falla, instala LTS con Chocolatey
-      try {
-        node -v
-        npm -v
-      } catch {
-        Write-Host "[warn] Node no disponible tras Install-Product, instalando LTS con choco..."
+      try { node -v; npm -v } catch {
+        Write-Host "[warn] Node no disponible; instalando LTS con choco..."
         choco install -y nodejs-lts
         RefreshEnv
-        node -v
-        npm -v
+        node -v; npm -v
       }
 
-      # --- Build web (Vite) ---
+      # --- WEB: instalar deps y asegurar @vitejs/plugin-react ---
       Push-Location web
       if (Test-Path "package-lock.json") {
         cmd /c "npm ci --no-fund --no-audit"
+        if (-not (Test-Path "node_modules\\@vitejs\\plugin-react")) {
+          Write-Host "[info] Faltaba @vitejs/plugin-react; instalando devDep..."
+          cmd /c "npm i -D @vitejs/plugin-react --no-fund --no-audit"
+        }
       } else {
         cmd /c "npm install --no-fund --no-audit"
+        if (-not (Test-Path "node_modules\\@vitejs\\plugin-react")) {
+          cmd /c "npm i -D @vitejs/plugin-react --no-fund --no-audit"
+        }
       }
       cmd /c "npm run build"
-      if (-not (Test-Path "dist")) { throw "No se generó web/dist; revisa errores de Vite" }
+      if (-not (Test-Path "dist")) { throw "No se generó web/dist; revisa Vite" }
       Pop-Location
 
-      # --- Instalar deps de desktop ---
+      # --- DESKTOP: deps ---
       Push-Location desktop
-      if (Test-Path "package-lock.json") {
-        cmd /c "npm ci --no-fund --no-audit"
-      } else {
-        cmd /c "npm install --no-fund --no-audit"
-      }
+      if (Test-Path "package-lock.json") { cmd /c "npm ci --no-fund --no-audit" } else { cmd /c "npm install --no-fund --no-audit" }
       Pop-Location
 
 build_script:
@@ -77,17 +66,14 @@ build_script:
       Set-StrictMode -Version Latest
       $ErrorActionPreference = 'Stop'
 
-      # Copiar web → Electron
       if (Test-Path 'desktop\\app') { Remove-Item -Recurse -Force 'desktop\\app' }
       New-Item -ItemType Directory -Force -Path 'desktop\\app' | Out-Null
       robocopy web\\dist desktop\\app /E | Out-Host
 
-      # Empaquetar (Windows)
       Push-Location desktop
       cmd /c "npm run pack:win"
       if ($LASTEXITCODE -ne 0) { Pop-Location; throw "electron-builder failed ($LASTEXITCODE)" }
 
-      # Buscar .exe en release o dist (cubre ambas configuraciones)
       $artifact = Get-ChildItem -Path ".\\release",".\\dist" -Recurse -Filter *.exe -ErrorAction SilentlyContinue |
                   Sort-Object LastWriteTime -Descending | Select-Object -First 1
       Pop-Location
@@ -101,23 +87,3 @@ artifacts:
   - path: QuantumCore-Setup-latest.exe
     name: QuantumCore-Setup
 
-# --- (Opcional) Job Linux para AppImage ---
-# for:
-#   -
-#     matrix:
-#       only:
-#         - image: Ubuntu2204
-#     install:
-#       - sh: |
-#           set -e
-#           cd web && npm ci && npm run build && cd ..
-#           cd desktop && npm ci && cd ..
-#     build_script:
-#       - sh: |
-#           set -e
-#           rm -rf desktop/app && mkdir -p desktop/app
-#           cp -r web/dist/* desktop/app/
-#           cd desktop && npx --yes electron-builder --linux AppImage
-#     artifacts:
-#       - path: desktop/release/*.AppImage
-#         name: QuantumCore-AppImage
