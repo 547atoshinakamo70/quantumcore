@@ -2,39 +2,57 @@ version: '{build}'
 image: Visual Studio 2022
 test: off
 
-# === Environment (set secrets in AppVeyor UI; do NOT hardcode real keys) ===
+# Solo construye main y ramas de release
+branches:
+  only:
+    - main
+    - release/*
+
+# No construir tags
+skip_tags: true
+clone_depth: 1
+shallow_clone: true
+
+# Cache para acelerar
+cache:
+  - web\node_modules -> web\package-lock.json
+  - desktop\node_modules -> desktop\package-lock.json
+
 environment:
   NODE_VERSION: 20
-  # Vite frontend env (injected at build)
-  VITE_ETH_RPC: 
-    secure: REPLACE_IN_APPVEYOR_UI
-  VITE_POLYGON_RPC:
-    secure: REPLACE_IN_APPVEYOR_UI
-  VITE_BNB_RPC:
-    secure: REPLACE_IN_APPVEYOR_UI
-  VITE_COSMOS_RPC:
-    secure: REPLACE_IN_APPVEYOR_UI
-  VITE_COSMOS_DENOM:
-    secure: REPLACE_IN_APPVEYOR_UI
-  VITE_BTC_API:
-    secure: REPLACE_IN_APPVEYOR_UI
-  VITE_DAG_NODE:
-    secure: REPLACE_IN_APPVEYOR_UI
+  CSC_IDENTITY_AUTO_DISCOVERY: false  # evita intentos de code signing
 
 init:
   - ps: |
-      $ProgressPreference = "SilentlyContinue"
+      $ProgressPreference = 'SilentlyContinue'
       Write-Host "Repo root:" (Get-Location)
 
 install:
   - ps: |
-      Set-StrictMode -Version Latest
-      $ErrorActionPreference = "Stop"
-      Install-Product node $env:NODE_VERSION
-      node -v
-      npm -v
+      # --- Instalar Node con tolerancia a mensajes de stderr "The operation completed successfully." ---
+      $prev = $ErrorActionPreference
+      $ErrorActionPreference = 'Continue'
+      try {
+        Install-Product node $env:NODE_VERSION -ErrorAction SilentlyContinue
+      } catch {
+        Write-Host "[warn] Install-Product lanzó excepción: $($_.Exception.Message)"
+      } finally {
+        $ErrorActionPreference = $prev
+      }
 
-      # 1) Build web (React + Vite)
+      # Verifica Node/NPM; si algo falla, instala LTS con Chocolatey
+      try {
+        node -v
+        npm -v
+      } catch {
+        Write-Host "[warn] Node no disponible tras Install-Product, instalando LTS con choco..."
+        choco install -y nodejs-lts
+        RefreshEnv
+        node -v
+        npm -v
+      }
+
+      # --- Build web (Vite) ---
       Push-Location web
       if (Test-Path "package-lock.json") {
         cmd /c "npm ci --no-fund --no-audit"
@@ -42,9 +60,10 @@ install:
         cmd /c "npm install --no-fund --no-audit"
       }
       cmd /c "npm run build"
+      if (-not (Test-Path "dist")) { throw "No se generó web/dist; revisa errores de Vite" }
       Pop-Location
 
-      # 2) Prepare Electron (desktop)
+      # --- Instalar deps de desktop ---
       Push-Location desktop
       if (Test-Path "package-lock.json") {
         cmd /c "npm ci --no-fund --no-audit"
@@ -55,21 +74,34 @@ install:
 
 build_script:
   - ps: |
-      # Copy web/dist into desktop/app
-      if (Test-Path 'desktop\app') { Remove-Item -Recurse -Force 'desktop\app' }
-      New-Item -ItemType Directory -Force -Path 'desktop\app' | Out-Null
-      robocopy web\dist desktop\app /E | Out-Host
+      Set-StrictMode -Version Latest
+      $ErrorActionPreference = 'Stop'
 
-      # Pack Windows installer
+      # Copiar web → Electron
+      if (Test-Path 'desktop\\app') { Remove-Item -Recurse -Force 'desktop\\app' }
+      New-Item -ItemType Directory -Force -Path 'desktop\\app' | Out-Null
+      robocopy web\\dist desktop\\app /E | Out-Host
+
+      # Empaquetar (Windows)
       Push-Location desktop
       cmd /c "npm run pack:win"
+      if ($LASTEXITCODE -ne 0) { Pop-Location; throw "electron-builder failed ($LASTEXITCODE)" }
+
+      # Buscar .exe en release o dist (cubre ambas configuraciones)
+      $artifact = Get-ChildItem -Path ".\\release",".\\dist" -Recurse -Filter *.exe -ErrorAction SilentlyContinue |
+                  Sort-Object LastWriteTime -Descending | Select-Object -First 1
       Pop-Location
 
+      if (-not $artifact) { throw "No se encontró ningún .exe en desktop\\release ni en desktop\\dist" }
+
+      Copy-Item $artifact.FullName "QuantumCore-Setup-latest.exe" -Force
+      Write-Host "Artefacto listo: QuantumCore-Setup-latest.exe"
+
 artifacts:
-  - path: desktop\release\*.exe
+  - path: QuantumCore-Setup-latest.exe
     name: QuantumCore-Setup
 
-# --- Optional Linux build (uncomment to add Ubuntu job) ---
+# --- (Opcional) Job Linux para AppImage ---
 # for:
 #   -
 #     matrix:
