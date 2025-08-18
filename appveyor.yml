@@ -1,4 +1,4 @@
-version: '{build}'
+version: "{build}"
 image: Visual Studio 2022
 test: off
 
@@ -11,125 +11,57 @@ skip_tags: true
 clone_depth: 1
 shallow_clone: true
 
-cache:
-  - web\node_modules -> web\package-lock.json
-  - desktop\node_modules -> desktop\package-lock.json
-
 environment:
   NODE_VERSION: 20
   CSC_IDENTITY_AUTO_DISCOVERY: false
 
-init:
-  - ps: |
-      $ProgressPreference = 'SilentlyContinue'
-      Write-Host "Repo root:" (Get-Location)
-
 install:
-  - ps: |
-      # --- Node con tolerancia a stderr benigno ---
-      $prev = $ErrorActionPreference
-      $ErrorActionPreference = 'Continue'
-      try {
-        Install-Product node $env:NODE_VERSION -ErrorAction SilentlyContinue
-      } catch {
-        Write-Host "[warn] Install-Product: $($_.Exception.Message)"
-      } finally {
-        $ErrorActionPreference = $prev
-      }
+  # Node.js
+  - ps: Install-Product node $env:NODE_VERSION
+  - node -v
+  - npm -v
 
-      try { node -v; npm -v } catch {
-        Write-Host "[warn] Node no disponible; instalando LTS con choco..."
-        choco install -y nodejs-lts
-        RefreshEnv
-        node -v; npm -v
-      }
+  # Web (React + Vite)
+  - cd web
+  - npm install --legacy-peer-deps --no-fund --no-audit
+  - npm run build
+  - cd ..
 
-      # --- WEB: preparar configs y deps ---
-      Push-Location web
-
-      # 1) Si el proyecto es ESM ("type":"module"), renombra configs .js -> .cjs
-      $pkgJson = Get-Content package.json -Raw | ConvertFrom-Json
-      $isEsm = ($pkgJson.PSObject.Properties.Name -contains 'type') -and ($pkgJson.type -eq 'module')
-
-      if ($isEsm) {
-        if (Test-Path "postcss.config.js") { Rename-Item -Force "postcss.config.js" "postcss.config.cjs" }
-        if (Test-Path "tailwind.config.js") { Rename-Item -Force "tailwind.config.js" "tailwind.config.cjs" }
-      }
-
-      # 2) Crear configs por defecto si no existen (CJS)
-      if (-not (Test-Path "postcss.config.cjs")) {
-        $pc = @"
-module.exports = {
-  plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
-  },
-};
-"@
-        Set-Content -Path "postcss.config.cjs" -Value $pc -Encoding ASCII
-      }
-      if (-not (Test-Path "tailwind.config.cjs")) {
-        $tw = @"
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  content: ['./index.html','./src/**/*.{ts,tsx}'],
-  theme: { extend: {} },
-  plugins: [],
-};
-"@
-        Set-Content -Path "tailwind.config.cjs" -Value $tw -Encoding ASCII
-      }
-
-      # 3) Dependencias (y asegurar @vitejs/plugin-react)
-      if (Test-Path "package-lock.json") {
-        cmd /c "npm ci --no-fund --no-audit"
-      } else {
-        cmd /c "npm install --no-fund --no-audit"
-      }
-      if (-not (Test-Path "node_modules\\@vitejs\\plugin-react")) {
-        cmd /c "npm i -D @vitejs/plugin-react --no-fund --no-audit"
-      }
-
-      # 4) Build Vite
-      cmd /c "npm run build"
-      if (-not (Test-Path "dist")) { throw "No se generó web/dist; revisa Vite" }
-
-      Pop-Location  # web
-
-      # --- DESKTOP: deps ---
-      Push-Location desktop
-      if (Test-Path "package-lock.json") {
-        cmd /c "npm ci --no-fund --no-audit"
-      } else {
-        cmd /c "npm install --no-fund --no-audit"
-      }
-      Pop-Location  # desktop
+  # Desktop (Electron)
+  - cd desktop
+  - npm install --legacy-peer-deps --no-fund --no-audit
+  - cd ..
 
 build_script:
-  - ps: |
-      Set-StrictMode -Version Latest
-      $ErrorActionPreference = 'Stop'
+  # Copiar frontend compilado → Electron
+  - if exist desktop\app rmdir /s /q desktop\app
+  - mkdir desktop\app
+  - robocopy web\dist desktop\app /E
 
-      # Copiar web → Electron
-      if (Test-Path 'desktop\\app') { Remove-Item -Recurse -Force 'desktop\\app' }
-      New-Item -ItemType Directory -Force -Path 'desktop\\app' | Out-Null
-      robocopy web\\dist desktop\\app /E | Out-Host
-
-      # Empaquetar (Windows)
-      Push-Location desktop
-      cmd /c "npm run pack:win"
-      if ($LASTEXITCODE -ne 0) { Pop-Location; throw "electron-builder failed ($LASTEXITCODE)" }
-
-      # Buscar .exe en release o dist
-      $artifact = Get-ChildItem -Path ".\\release",".\\dist" -Recurse -Filter *.exe -ErrorAction SilentlyContinue |
-                  Sort-Object LastWriteTime -Descending | Select-Object -First 1
-      Pop-Location
-
-      if (-not $artifact) { throw "No se encontró ningún .exe en desktop\\release ni en desktop\\dist" }
-
-      Copy-Item $artifact.FullName "QuantumCore-Setup-latest.exe" -Force
-      Write-Host "Artefacto listo: QuantumCore-Setup-latest.exe"
+  # Build Windows
+  - cd desktop
+  - npm run dist
+  - cd ..
 
 artifacts:
-  - path: QuantumCore-Setup-latest.exe
-    name: QuantumCore-Setup
+  - path: desktop\dist\*.exe
+    name: Windows-Installer
+  - path: desktop\dist\*.dmg
+    name: macOS-Installer
+  - path: desktop\dist\*.AppImage
+    name: Linux-Installer
+
+deploy:
+  provider: GitHub
+  release: v$(APPVEYOR_BUILD_VERSION)
+  description: "QuantumCore auto-build"
+  auth_token:
+    secure: %GITHUB_TOKEN%
+  artifact: 
+    - Windows-Installer
+    - macOS-Installer
+    - Linux-Installer
+  draft: false
+  prerelease: false
+  on:
+    branch: main
