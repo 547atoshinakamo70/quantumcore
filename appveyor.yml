@@ -38,20 +38,51 @@ install:
         node -v; npm -v
       }
 
-      # --- WEB: instalar deps y asegurar @vitejs/plugin-react ---
+      # --- WEB: prepara configs ESM/CJS y deps ---
       Push-Location web
+
+      # 1) Si el proyecto es ESM ("type":"module"), renombra configs .js -> .cjs para evitar "module is not defined"
+      $pkgJson = Get-Content package.json -Raw | ConvertFrom-Json
+      $isEsm = $pkgJson.PSObject.Properties.Name -contains "type" -and $pkgJson.type -eq "module"
+
+      if ($isEsm) {
+        if (Test-Path "postcss.config.js") { Rename-Item -Force "postcss.config.js" "postcss.config.cjs" }
+        if (Test-Path "tailwind.config.js") { Rename-Item -Force "tailwind.config.js" "tailwind.config.cjs" }
+      }
+
+      # 2) Asegura postcss/tailwind configs (CJS)
+      if (!(Test-Path "postcss.config.cjs")) {
+        Set-Content -Encoding ASCII "postcss.config.cjs" (@"
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+"@)
+      }
+      if (!(Test-Path "tailwind.config.cjs")) {
+        Set-Content -Encoding ASCII "tailwind.config.cjs" (@"
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: ['./index.html','./src/**/*.{ts,tsx}'],
+  theme: { extend: {} },
+  plugins: [],
+};
+"@)
+      }
+
+      # 3) Dependencias
       if (Test-Path "package-lock.json") {
         cmd /c "npm ci --no-fund --no-audit"
-        if (-not (Test-Path "node_modules\\@vitejs\\plugin-react")) {
-          Write-Host "[info] Faltaba @vitejs/plugin-react; instalando devDep..."
-          cmd /c "npm i -D @vitejs/plugin-react --no-fund --no-audit"
-        }
       } else {
         cmd /c "npm install --no-fund --no-audit"
-        if (-not (Test-Path "node_modules\\@vitejs\\plugin-react")) {
-          cmd /c "npm i -D @vitejs/plugin-react --no-fund --no-audit"
-        }
       }
+      if (-not (Test-Path "node_modules\\@vitejs\\plugin-react")) {
+        cmd /c "npm i -D @vitejs/plugin-react --no-fund --no-audit"
+      }
+
+      # 4) Build
       cmd /c "npm run build"
       if (-not (Test-Path "dist")) { throw "No se generó web/dist; revisa Vite" }
       Pop-Location
@@ -66,14 +97,17 @@ build_script:
       Set-StrictMode -Version Latest
       $ErrorActionPreference = 'Stop'
 
+      # Copiar web → Electron
       if (Test-Path 'desktop\\app') { Remove-Item -Recurse -Force 'desktop\\app' }
       New-Item -ItemType Directory -Force -Path 'desktop\\app' | Out-Null
       robocopy web\\dist desktop\\app /E | Out-Host
 
+      # Empaquetar (Windows)
       Push-Location desktop
       cmd /c "npm run pack:win"
       if ($LASTEXITCODE -ne 0) { Pop-Location; throw "electron-builder failed ($LASTEXITCODE)" }
 
+      # Buscar .exe en release o dist
       $artifact = Get-ChildItem -Path ".\\release",".\\dist" -Recurse -Filter *.exe -ErrorAction SilentlyContinue |
                   Sort-Object LastWriteTime -Descending | Select-Object -First 1
       Pop-Location
@@ -86,4 +120,3 @@ build_script:
 artifacts:
   - path: QuantumCore-Setup-latest.exe
     name: QuantumCore-Setup
-
