@@ -57,10 +57,7 @@ deploy:
   description: "QuantumCore auto-build"
   auth_token:
     secure: %GITHUB_TOKEN%
-  artifact: 
-    - Windows-Installer
-    - macOS-Installer
-    - Linux-Installer
+  artifact: Windows-Installer,macOS-Installer,Linux-Installer
   draft: false
   prerelease: false
   on:
