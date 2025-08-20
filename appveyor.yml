@@ -69,7 +69,7 @@ deploy:
   release: v$(APPVEYOR_BUILD_VERSION)
   description: "QuantumCore auto-build (Windows, macOS, Linux)"
   auth_token:
-    secure: %GITHUB_TOKEN%
+    secure: "%GITHUB_TOKEN%"
   draft: false
   prerelease: false
   on:
