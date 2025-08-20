@@ -1,5 +1,11 @@
 version: "{build}"
-image: Visual Studio 2022
+
+# AppVeyor jobs por OS
+image:
+  - Visual Studio 2022    # Windows
+  - macos-monterey        # macOS
+  - Ubuntu2004            # Linux
+
 test: off
 
 branches:
@@ -17,7 +23,13 @@ environment:
 
 install:
   # Node.js
-  - ps: Install-Product node $env:NODE_VERSION
+  - ps: |
+      if ($isWindows) {
+        Install-Product node $env:NODE_VERSION
+      } else {
+        nvm install $env:NODE_VERSION
+        nvm use $env:NODE_VERSION
+      }
   - node -v
   - npm -v
 
@@ -34,30 +46,30 @@ install:
 
 build_script:
   # Copiar frontend compilado → Electron
-  - if exist desktop\app rmdir /s /q desktop\app
-  - mkdir desktop\app
-  - robocopy web\dist desktop\app /E
+  - if exist desktop\app rmdir /s /q desktop\app || true
+  - mkdir desktop\app || true
+  - robocopy web\dist desktop\app /E || cp -r web/dist/* desktop/app || true
 
-  # Build Windows
+  # Build multi-OS con electron-builder
   - cd desktop
   - npm run dist
   - cd ..
 
 artifacts:
-  - path: desktop\dist\*.exe
+  - path: desktop/dist/*.exe
     name: Windows-Installer
-  - path: desktop\dist\*.dmg
+  - path: desktop/dist/*.dmg
     name: macOS-Installer
-  - path: desktop\dist\*.AppImage
+  - path: desktop/dist/*.AppImage
     name: Linux-Installer
 
+# Deploy: GitHub Release
 deploy:
   provider: GitHub
   release: v$(APPVEYOR_BUILD_VERSION)
-  description: "QuantumCore auto-build"
+  description: "QuantumCore auto-build (Windows, macOS, Linux)"
   auth_token:
     secure: %GITHUB_TOKEN%
-  artifact: Windows-Installer,macOS-Installer,Linux-Installer
   draft: false
   prerelease: false
   on:
