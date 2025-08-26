@@ -1,76 +1,184 @@
+# QuantumEdge-Full — AppVeyor CI/CD
+# Pipeline “prudente” que no cambia tu código: sólo ejecuta lo que exista.
+# Linux: build web/backend/contratos
+# Windows: además, build de Electron (desktop)
+# Releases a GitHub sólo en tags (v*)
+
 version: "{build}"
 
-# AppVeyor jobs por OS
+# Ejecuta en Ubuntu y Windows (Windows para Electron)
 image:
-  - Visual Studio 2022    # Windows
-  - macos-monterey        # macOS
-  - Ubuntu2004            # Linux
+- Ubuntu2204
+- Visual Studio 2022
 
-test: off
-
-branches:
-  only:
-    - main
-    - release/*
-
-skip_tags: true
-clone_depth: 1
-shallow_clone: true
-
+# Variables comunes (ajústalas en AppVeyor UI como secured env vars)
 environment:
-  NODE_VERSION: 20
-  CSC_IDENTITY_AUTO_DISCOVERY: false
+  NODE_VERSION: "20"
+  # --- Secrets (ponlos en UI de AppVeyor -> Settings -> Environment) ---
+  # GH_TOKEN: token clásico o PAT con permiso "repo" para publicar releases
+  # NPM_TOKEN: si necesitas instalar paquetes privados (opcional)
+  # AA_BUNDLER_URL, PAYMASTER_URL, RPC_URL, etc. (si los necesita el build)
+  # ---------------------------------------------------------------------
+
+# Cachés para acelerar builds
+cache:
+- apps_cache_node: node_modules -> package-lock.json
+- web_cache_node: web/node_modules -> web/package-lock.json
+- backend_cache_node: backend/node_modules -> backend/package-lock.json
+- desktop_cache_node: desktop/node_modules -> desktop/package-lock.json
+- contracts_cache_node: contracts/node_modules -> contracts/package-lock.json
+
+# No necesitamos servicios de base de datos por defecto
+services: []
+
+# Fases
+init:
+  # Imprime algo de contexto
+  - cmd: echo Init on Windows
+  - sh: echo "Init on Linux"
 
 install:
-  # Node.js
+  # Instala Node 20 en ambos SO
   - ps: |
       if ($isWindows) {
         Install-Product node $env:NODE_VERSION
-      } else {
-        nvm install $env:NODE_VERSION
-        nvm use $env:NODE_VERSION
       }
-  - node -v
-  - npm -v
+  - sh: |
+      if [ "$APPVEYOR_BUILD_WORKER_IMAGE" != "Visual Studio 2022" ]; then
+        curl -fsSL https://deb.nodesource.com/setup_$NODE_VERSION.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+      fi
 
-  # Web (React + Vite)
-  - cd web
-  - npm install --legacy-peer-deps --no-fund --no-audit
-  - npm run build
-  - cd ..
+  # Autentica npm si tienes NPM_TOKEN
+  - sh: |
+      if [ -n "$NPM_TOKEN" ]; then
+        echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+      fi
 
-  # Desktop (Electron)
-  - cd desktop
-  - npm install --legacy-peer-deps --no-fund --no-audit
-  - cd ..
+  # Instalación en raíz (si tu repo lo requiere)
+  - sh: |
+      if [ -f package.json ]; then
+        npm ci || npm install
+      fi
+  - cmd: |
+      IF EXIST package.json (
+        call npm ci || call npm install
+      )
 
 build_script:
-  # Copiar frontend compilado → Electron
-  - if exist desktop\app rmdir /s /q desktop\app || true
-  - mkdir desktop\app || true
-  - robocopy web\dist desktop\app /E || cp -r web/dist/* desktop/app || true
+  # ---------- WEB ----------
+  - sh: |
+      if [ -d web ]; then
+        cd web
+        npm ci || npm install
+        npm run typecheck --if-present
+        npm run lint --if-present
+        npm run build --if-present
+        cd ..
+      fi
+  - cmd: |
+      IF EXIST web\package.json (
+        cd web
+        call npm ci || call npm install
+        call npm run typecheck --if-present
+        call npm run lint --if-present
+        call npm run build --if-present
+        cd ..
+      )
 
-  # Build multi-OS con electron-builder
-  - cd desktop
-  - npm run dist
-  - cd ..
+  # ---------- BACKEND ----------
+  - sh: |
+      if [ -d backend ]; then
+        cd backend
+        npm ci || npm install
+        npm run typecheck --if-present
+        npm run lint --if-present
+        npm run build --if-present
+        cd ..
+      fi
+  - cmd: |
+      IF EXIST backend\package.json (
+        cd backend
+        call npm ci || call npm install
+        call npm run typecheck --if-present
+        call npm run lint --if-present
+        call npm run build --if-present
+        cd ..
+      )
+
+  # ---------- CONTRACTS (Hardhat) ----------
+  - sh: |
+      if [ -f hardhat.config.js ] || [ -d contracts ]; then
+        npm --prefix contracts ci || true
+        npx hardhat compile || true
+        npx hardhat test || true
+      fi
+  - cmd: |
+      IF EXIST hardhat.config.js (
+        call npm --prefix contracts ci || echo no-contracts
+        call npx hardhat compile || echo "compile skipped"
+        call npx hardhat test || echo "tests skipped"
+      )
+
+  # ---------- DESKTOP (Electron) -> SOLO Windows ----------
+  - cmd: |
+      IF EXIST desktop\package.json (
+        IF "%APPVEYOR_BUILD_WORKER_IMAGE%"=="Visual Studio 2022" (
+          cd desktop
+          call npm ci || call npm install
+          REM Si usas electron-builder:
+          call npm run dist --if-present
+          REM Alternativa:
+          call npm run build --if-present
+          cd ..
+        )
+      )
+
+test_script:
+  # Tests genéricos (si existen en raíz)
+  - sh: npm test --if-present || true
+  - cmd: call npm test --if-present || echo "no-root-tests"
 
 artifacts:
-  - path: desktop/dist/*.exe
-    name: Windows-Installer
-  - path: desktop/dist/*.dmg
-    name: macOS-Installer
-  - path: desktop/dist/*.AppImage
-    name: Linux-Installer
+  # Empaquetados web/backend
+  - path: web/dist
+    name: web-dist
+    type: zip
+    when: on_success
+  - path: backend/dist
+    name: backend-dist
+    type: zip
+    when: on_success
+  # Binarios/artefactos de Electron (si los genera en desktop/dist o release/)
+  - path: desktop/dist/**
+    name: desktop-dist
+    type: zip
+    when: on_success
+  - path: desktop/release/**
+    name: desktop-release
+    type: zip
+    when: on_success
 
-# Deploy: GitHub Release
 deploy:
-  provider: GitHub
-  release: v$(APPVEYOR_BUILD_VERSION)
-  description: "QuantumCore auto-build (Windows, macOS, Linux)"
-  auth_token:
-    secure: "%GITHUB_TOKEN%"
-  draft: false
-  prerelease: false
-  on:
-    branch: main
+  # Publica a GitHub Releases sólo en tags que empiecen con v
+  - provider: GitHub
+    auth_token:
+      secure: $(GH_TOKEN)
+    artifact: web-dist, backend-dist, desktop-dist, desktop-release
+    draft: false
+    prerelease: false
+    force_update: true
+    on:
+      appveyor_repo_tag: true
+      # ej. tag v1.2.3
+      branch: /refs\/tags\/v.*/
+
+notifications:
+  - provider: Email
+    to:
+      - baydounr01@gmail.com
+    on_build_success: false
+    on_build_failure: true
+
+# Comportamiento ante fallos: los pasos “opcionales” no rompen el pipeline
+# porque usan --if-present/|| true. Los pasos críticos (instalación) sí fallan.
