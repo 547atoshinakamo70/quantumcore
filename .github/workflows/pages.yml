@@ -20,24 +20,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1) Detecta carpeta del proyecto (web/ o raíz) y gestor de paquetes (pnpm/npm)
+      # 1) Detecta carpeta del proyecto y gestor (npm/pnpm)
       - name: Detect project dir & package manager
         id: detect
         shell: bash
         run: |
+          set -e
           if [ -d web ] && [ -f web/package.json ]; then
-            echo "dir=web" >> $GITHUB_OUTPUT
+            DIR="web"
           else
-            echo "dir=." >> $GITHUB_OUTPUT
+            DIR="."
           fi
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
 
-          DIR="${PWD}/$( [ "${{ steps.detect.outputs.dir }}" = "" ] && echo "." || echo "${{ steps.detect.outputs.dir }}" )"
-          # Re-evaluar con la salida real del paso (GitHub rellena tras finalizar el paso)
-          if [ -d web ] && [ -f web/package.json ]; then DIR="web"; else DIR="."; fi
           if [ -f "$DIR/pnpm-lock.yaml" ]; then
-            echo "pkg=pnpm" >> $GITHUB_OUTPUT
+            echo "pkg=pnpm" >> "$GITHUB_OUTPUT"
           else
-            echo "pkg=npm" >> $GITHUB_OUTPUT
+            echo "pkg=npm" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Setup Node.js
@@ -60,7 +59,27 @@ jobs:
             npm ci || npm i
           fi
 
-      # 3) Detecta framework y compila. Para Vite: hotfix de @vitejs/plugin-react si falta.
+      # 3) Fix PostCSS/Tailwind cuando el proyecto es ESM ("type": "module")
+      - name: Fix PostCSS/Tailwind config for ESM
+        shell: bash
+        run: |
+          set -e
+          DIR="${{ steps.detect.outputs.dir }}"
+          if [ -f "$DIR/package.json" ] && grep -q '"type":[[:space:]]*"module"' "$DIR/package.json"; then
+            for f in postcss.config.js tailwind.config.js; do
+              if [ -f "$DIR/$f" ] && grep -q 'module.exports' "$DIR/$f"; then
+                mv "$DIR/$f" "$DIR/${f%.js}.cjs"
+                echo "Renamed $f -> ${f%.js}.cjs (CJS under ESM)"
+              fi
+            done
+          fi
+          # Asegura PostCSS/autoprefixer si faltan
+          if [ -f "$DIR/package.json" ]; then
+            node -e "const p=require('$DIR/package.json');const d={...p.devDependencies,...p.dependencies};process.exit(d&&d.postcss&&d.autoprefixer?0:1)" \
+            || ( cd "$DIR" && npm i -D postcss autoprefixer )
+          fi
+
+      # 4) Compila según framework; Vite incluye hotfix de @vitejs/plugin-react y --base
       - name: Build (auto-detect)
         id: build
         shell: bash
@@ -82,7 +101,6 @@ jobs:
 
           if [ "$FRAMEWORK" = "next" ]; then
             cd "$DIR"
-            # Requiere proyecto exportable (SSG). Si usas SSR puro, usa Docker en lugar de Pages.
             npm run build --if-present || npx next build
             npx next export -o out
             OUTDIR="$DIR/out"
@@ -91,8 +109,9 @@ jobs:
             cd "$DIR"
             # Hotfix: instala @vitejs/plugin-react si falta
             node -e "try{const p=require('./package.json');const d=p.devDependencies||{};const r=p.dependencies||{};if(!d['@vitejs/plugin-react'] && !r['@vitejs/plugin-react']){process.exit(1)}}catch(e){process.exit(1)}" \
-            || ( [ "$PKG" = "pnpm" ] && pnpm add -D @vitejs/plugin-react || npm i -D @vitejs/plugin-react )
-            # Build con base para servir bajo /<repo>/
+            || if [ "$PKG" = "pnpm" ]; then pnpm add -D @vitejs/plugin-react; else npm i -D @vitejs/plugin-react; fi
+
+            # Build con base para Pages (sirve bajo /<repo>/)
             if [ "$PKG" = "pnpm" ]; then
               pnpm exec vite build --base="/$REPO/"
             else
@@ -110,14 +129,14 @@ jobs:
             OUTDIR="$DIR"
           fi
 
-          # SPA fallback: evita 404 al refrescar rutas client-side
+          # SPA fallback (evita 404 en rutas client-side)
           if [ -f "$OUTDIR/index.html" ]; then
             cp "$OUTDIR/index.html" "$OUTDIR/404.html" || true
           fi
 
-          echo "outdir=$OUTDIR" >> $GITHUB_OUTPUT
+          echo "outdir=$OUTDIR" >> "$GITHUB_OUTPUT"
 
-      # 4) Sube el artefacto a GitHub Pages
+      # 5) Sube artefacto de Pages
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
