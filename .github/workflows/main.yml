@@ -1,4 +1,4 @@
-name: Deploy dApp (Auto-detect) to GitHub Pages
+name: Deploy dApp (Auto) to GitHub Pages
 
 on:
   push:
@@ -20,66 +20,104 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Detect project dir (web/ or root)
-        id: detect_dir
+      # 1) Detecta carpeta del proyecto (web/ o raíz) y gestor de paquetes (pnpm/npm)
+      - name: Detect project dir & package manager
+        id: detect
+        shell: bash
         run: |
-          if [ -d web ]; then
+          if [ -d web ] && [ -f web/package.json ]; then
             echo "dir=web" >> $GITHUB_OUTPUT
           else
             echo "dir=." >> $GITHUB_OUTPUT
           fi
 
-      - name: Install deps (if package.json exists)
+          DIR="${PWD}/$( [ "${{ steps.detect.outputs.dir }}" = "" ] && echo "." || echo "${{ steps.detect.outputs.dir }}" )"
+          # Re-evaluar con la salida real del paso (GitHub rellena tras finalizar el paso)
+          if [ -d web ] && [ -f web/package.json ]; then DIR="web"; else DIR="."; fi
+          if [ -f "$DIR/pnpm-lock.yaml" ]; then
+            echo "pkg=pnpm" >> $GITHUB_OUTPUT
+          else
+            echo "pkg=npm" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 2) Instala dependencias según npm/pnpm
+      - name: Install deps
+        shell: bash
         run: |
           set -e
-          cd "${{ steps.detect_dir.outputs.dir }}"
-          if [ -f package.json ]; then
+          DIR="${{ steps.detect.outputs.dir }}"
+          PKG="${{ steps.detect.outputs.pkg }}"
+          cd "$DIR"
+          if [ "$PKG" = "pnpm" ]; then
+            npm i -g pnpm
+            pnpm i --frozen-lockfile || pnpm i
+          else
             npm ci || npm i
           fi
 
-      - name: Detect framework & build
+      # 3) Detecta framework y compila. Para Vite: hotfix de @vitejs/plugin-react si falta.
+      - name: Build (auto-detect)
         id: build
+        shell: bash
         run: |
           set -e
-          DIR="${{ steps.detect_dir.outputs.dir }}"
-          PKG="$DIR/package.json"
+          DIR="${{ steps.detect.outputs.dir }}"
+          PKG="${{ steps.detect.outputs.pkg }}"
+          REPO="${{ github.event.repository.name }}"
           OUTDIR=""
+          FRAMEWORK="static"
 
-          if [ -f "$PKG" ] && grep -qi '"next"' "$PKG"; then
-            echo "Framework: Next.js"
+          if [ -f "$DIR/package.json" ]; then
+            if grep -qi '"next"' "$DIR/package.json"; then FRAMEWORK="next"; fi
+            if grep -qi '"vite"' "$DIR/package.json"; then FRAMEWORK="vite"; fi
+            if grep -qi '"react-scripts"' "$DIR/package.json"; then FRAMEWORK="cra"; fi
+          fi
+
+          echo "Framework detected: $FRAMEWORK"
+
+          if [ "$FRAMEWORK" = "next" ]; then
             cd "$DIR"
-            # build + export estático (fallará si usas SSR puro)
+            # Requiere proyecto exportable (SSG). Si usas SSR puro, usa Docker en lugar de Pages.
             npm run build --if-present || npx next build
             npx next export -o out
             OUTDIR="$DIR/out"
-          elif [ -f "$PKG" ] && grep -qi '"vite"' "$PKG"; then
-            echo "Framework: Vite"
+
+          elif [ "$FRAMEWORK" = "vite" ]; then
             cd "$DIR"
-            npm run build
+            # Hotfix: instala @vitejs/plugin-react si falta
+            node -e "try{const p=require('./package.json');const d=p.devDependencies||{};const r=p.dependencies||{};if(!d['@vitejs/plugin-react'] && !r['@vitejs/plugin-react']){process.exit(1)}}catch(e){process.exit(1)}" \
+            || ( [ "$PKG" = "pnpm" ] && pnpm add -D @vitejs/plugin-react || npm i -D @vitejs/plugin-react )
+            # Build con base para servir bajo /<repo>/
+            if [ "$PKG" = "pnpm" ]; then
+              pnpm exec vite build --base="/$REPO/"
+            else
+              npx vite build --base="/$REPO/"
+            fi
             OUTDIR="$DIR/dist"
-          elif [ -f "$PKG" ] && grep -qi '"react-scripts"' "$PKG"; then
-            echo "Framework: CRA (react-scripts)"
+
+          elif [ "$FRAMEWORK" = "cra" ]; then
             cd "$DIR"
             npm run build
             OUTDIR="$DIR/build"
+
           else
-            echo "Framework: static (no build)"
+            # HTML estático sin build
             OUTDIR="$DIR"
           fi
 
-          # SPA fallback para rutas client-side
+          # SPA fallback: evita 404 al refrescar rutas client-side
           if [ -f "$OUTDIR/index.html" ]; then
             cp "$OUTDIR/index.html" "$OUTDIR/404.html" || true
           fi
 
-          echo "OUTDIR=$OUTDIR" >> $GITHUB_ENV
           echo "outdir=$OUTDIR" >> $GITHUB_OUTPUT
 
+      # 4) Sube el artefacto a GitHub Pages
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
