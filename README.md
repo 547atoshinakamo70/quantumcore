@@ -1,30 +1,18 @@
-# QuantumEdge-Full 🚀
+# Production Safety Belt (Drop-in Kit)
 
-QuantumEdge es una dApp modular cuántica de nueva generación con:
+Este paquete te permite ejecutar tu experimento **tal cual está**, pero con
+controles mínimos de producción: contenedores reproducibles, proxy TLS con
+rate limiting, health checks, CI, y plantillas de despliegue. **No incluye
+bloqueo por país/geo-IP**; respeta tu enfoque de privacidad y fraud-detection
+basado en TensorFlow/Keras.
 
-- 🧠 QNN (Quantum Neural Networks)
-- 🔐 ZK-SNARKs
-- 💱 CoinJoin
-- 🏦 Vaults & Minería
-- 🗳️ DAO cuántica
-- 🌉 Interchain Router (Ethereum, Polygon, BNB, Cosmos, Bitcoin, DAG)
-- 👛 Wallets AA (ERC-4337)
-- 📊 Market Sentinel
-- 🤖 AI-as-a-Service
-- 🔁 Pagos recurrentes
-- 🧬 NFTs funcionales (Quantum Badges)
+## ¿Cómo integrar?
+1. Copia las carpetas de este paquete en la raíz de tu repo (no sobrescribe tu código).
+2. Revisa `proxy/default.conf` para ajustar CORS/CSP/ORIGIN.
+3. Exporta variables de entorno según `app-snippets/env.ts` y `.env.example`.
+4. Construye y prueba localmente con `compose/docker-compose.yml`.
+5. Configura `REGISTRY` e `IMAGE_NAME` en `.github/workflows/ci.yml`.
+6. Despliega en Kubernetes con el Helm chart de `k8s/helm/` (staging → prod).
+7. Opcional: Ejecuta el **Relayer Guardian** como proxy para AA/RPC con límites y circuit breaker.
 
-## ⚡ Instalación
-
-```bash
-npm install
-npm run dev
-```
-
-## 📦 Deploy de contratos
-
-```bash
-npx hardhat compile
-npx hardhat run scripts/deploy.js --network mainnet
-```
-
+> Sugerencia: empieza por staging (idéntico a prod) y canary 1–5% antes de 100%.
