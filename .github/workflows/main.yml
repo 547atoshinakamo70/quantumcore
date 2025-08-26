@@ -1,0 +1,96 @@
+name: Deploy dApp (Auto-detect) to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Detect project dir (web/ or root)
+        id: detect_dir
+        run: |
+          if [ -d web ]; then
+            echo "dir=web" >> $GITHUB_OUTPUT
+          else
+            echo "dir=." >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install deps (if package.json exists)
+        run: |
+          set -e
+          cd "${{ steps.detect_dir.outputs.dir }}"
+          if [ -f package.json ]; then
+            npm ci || npm i
+          fi
+
+      - name: Detect framework & build
+        id: build
+        run: |
+          set -e
+          DIR="${{ steps.detect_dir.outputs.dir }}"
+          PKG="$DIR/package.json"
+          OUTDIR=""
+
+          if [ -f "$PKG" ] && grep -qi '"next"' "$PKG"; then
+            echo "Framework: Next.js"
+            cd "$DIR"
+            # build + export estático (fallará si usas SSR puro)
+            npm run build --if-present || npx next build
+            npx next export -o out
+            OUTDIR="$DIR/out"
+          elif [ -f "$PKG" ] && grep -qi '"vite"' "$PKG"; then
+            echo "Framework: Vite"
+            cd "$DIR"
+            npm run build
+            OUTDIR="$DIR/dist"
+          elif [ -f "$PKG" ] && grep -qi '"react-scripts"' "$PKG"; then
+            echo "Framework: CRA (react-scripts)"
+            cd "$DIR"
+            npm run build
+            OUTDIR="$DIR/build"
+          else
+            echo "Framework: static (no build)"
+            OUTDIR="$DIR"
+          fi
+
+          # SPA fallback para rutas client-side
+          if [ -f "$OUTDIR/index.html" ]; then
+            cp "$OUTDIR/index.html" "$OUTDIR/404.html" || true
+          fi
+
+          echo "OUTDIR=$OUTDIR" >> $GITHUB_ENV
+          echo "outdir=$OUTDIR" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ steps.build.outputs.outdir }}
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
