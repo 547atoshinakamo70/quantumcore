@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # npm ecosystem monitoring for /web directory
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "daily"
+      time: "05:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "automated"]
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      dev-deps:
+        applies-to: "development"  # devDependencies only
+        patterns:
+          - "*"
+        update-types: ["minor", "patch"]
+
+  # GitHub Actions ecosystem monitoring for root directory
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "05:30"
+      timezone: "UTC"
+    labels: ["dependencies", "actions", "automated"]
+    commit-message:
+      prefix: "deps(actions)"
+      include: "scope"

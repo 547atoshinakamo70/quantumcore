@@ -1,0 +1,136 @@
+name: Dependabot Auto-merge
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    # Only run for Dependabot PRs
+    if: github.actor == 'dependabot[bot]'
+    
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install GitHub CLI
+        run: |
+          type -p curl >/dev/null || (sudo apt update && sudo apt install curl -y)
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+          && sudo apt update \
+          && sudo apt install gh -y
+
+      - name: Wait for status checks
+        run: |
+          # Wait for status checks to complete (max 10 minutes)
+          for i in {1..60}; do
+            # Get PR status using GitHub CLI
+            status=$(gh pr view ${{ github.event.pull_request.number }} --json statusCheckRollup --jq '.statusCheckRollup[] | select(.context != "auto-merge") | .state' || echo "")
+            
+            # Check if all required checks are successful
+            if [[ -z "$status" ]] || echo "$status" | grep -v "SUCCESS" | grep -q .; then
+              echo "Waiting for status checks... (attempt $i/60)"
+              sleep 10
+            else
+              echo "All status checks passed!"
+              break
+            fi
+            
+            if [[ $i -eq 60 ]]; then
+              echo "Timeout waiting for status checks"
+              exit 1
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get Dependabot metadata
+        id: metadata
+        run: |
+          # Parse PR body for dependency information
+          pr_body=$(gh pr view ${{ github.event.pull_request.number }} --json body --jq '.body')
+          
+          # Extract update type (patch, minor, major) from PR body
+          update_type=""
+          if echo "$pr_body" | grep -q "dependency-type.*production"; then
+            dependency_type="production"
+          else
+            dependency_type="development"
+          fi
+          
+          if echo "$pr_body" | grep -q "update-type.*version-update:semver-patch"; then
+            update_type="patch"
+          elif echo "$pr_body" | grep -q "update-type.*version-update:semver-minor"; then
+            update_type="minor"
+          elif echo "$pr_body" | grep -q "update-type.*version-update:semver-major"; then
+            update_type="major"
+          fi
+          
+          # Check for security updates
+          security_update="false"
+          if echo "$pr_body" | grep -q "security"; then
+            security_update="true"
+          fi
+          
+          # Check for GitHub Actions updates (these are generally safe)
+          github_actions="false"
+          if echo "$pr_body" | grep -q "github-actions" || [[ "${{ github.event.pull_request.title }}" == *"deps(actions)"* ]]; then
+            github_actions="true"
+          fi
+          
+          echo "dependency_type=$dependency_type" >> $GITHUB_OUTPUT
+          echo "update_type=$update_type" >> $GITHUB_OUTPUT
+          echo "security_update=$security_update" >> $GITHUB_OUTPUT
+          echo "github_actions=$github_actions" >> $GITHUB_OUTPUT
+          
+          echo "Detected: dependency_type=$dependency_type, update_type=$update_type, security=$security_update, github_actions=$github_actions"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for no-auto-merge label
+        id: check-label
+        run: |
+          labels=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name')
+          if echo "$labels" | grep -q "no-auto-merge"; then
+            echo "no_auto_merge=true" >> $GITHUB_OUTPUT
+            echo "Found 'no-auto-merge' label - skipping auto-merge"
+          else
+            echo "no_auto_merge=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-merge qualifying PRs
+        if: |
+          steps.check-label.outputs.no_auto_merge == 'false' && (
+            steps.metadata.outputs.security_update == 'true' ||
+            steps.metadata.outputs.update_type == 'patch' ||
+            steps.metadata.outputs.github_actions == 'true'
+          )
+        run: |
+          echo "Auto-merging PR #${{ github.event.pull_request.number }}"
+          echo "Reason: security=${{ steps.metadata.outputs.security_update }}, patch=${{ steps.metadata.outputs.update_type }}, github_actions=${{ steps.metadata.outputs.github_actions }}"
+          
+          # Merge the PR using squash method
+          gh pr merge ${{ github.event.pull_request.number }} --squash --auto
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip auto-merge
+        if: |
+          steps.check-label.outputs.no_auto_merge == 'true' || (
+            steps.metadata.outputs.security_update != 'true' &&
+            steps.metadata.outputs.update_type != 'patch' &&
+            steps.metadata.outputs.github_actions != 'true'
+          )
+        run: |
+          echo "Skipping auto-merge for PR #${{ github.event.pull_request.number }}"
+          echo "Reason: no_auto_merge=${{ steps.check-label.outputs.no_auto_merge }}, security=${{ steps.metadata.outputs.security_update }}, update_type=${{ steps.metadata.outputs.update_type }}, github_actions=${{ steps.metadata.outputs.github_actions }}"
+          echo "This PR requires manual review."
