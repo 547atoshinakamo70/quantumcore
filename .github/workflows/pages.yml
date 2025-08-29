@@ -83,6 +83,10 @@ jobs:
       - name: Build (auto-detect)
         id: build
         shell: bash
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -e
           DIR="${{ steps.detect.outputs.dir }}"
@@ -110,6 +114,11 @@ jobs:
             # Hotfix: instala @vitejs/plugin-react si falta
             node -e "try{const p=require('./package.json');const d=p.devDependencies||{};const r=p.dependencies||{};if(!d['@vitejs/plugin-react'] && !r['@vitejs/plugin-react']){process.exit(1)}}catch(e){process.exit(1)}" \
             || if [ "$PKG" = "pnpm" ]; then pnpm add -D @vitejs/plugin-react; else npm i -D @vitejs/plugin-react; fi
+
+            # Generate build metadata
+            if [ -f "../scripts/write-build-metadata.mjs" ]; then
+              node ../scripts/write-build-metadata.mjs || echo "Build metadata generation failed, continuing..."
+            fi
 
             # Build con base para Pages (sirve bajo /<repo>/)
             if [ "$PKG" = "pnpm" ]; then
