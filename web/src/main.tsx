@@ -2,6 +2,7 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { createHashRouter, RouterProvider } from 'react-router-dom'
 import './styles.css'
+import './build-info' // Import build info to make it available globally
 import App from './shell/App'
 import Dashboard from './views/Dashboard'
 import Wallet from './views/Wallet'
