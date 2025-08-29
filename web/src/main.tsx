@@ -14,6 +14,7 @@ import Interchain from './views/Interchain'
 import CoinJoin from './views/CoinJoin'
 import Vaults from './views/Vaults'
 import Settings from './views/Settings'
+import NotFound from './views/NotFound'
 
 const router = createHashRouter([
   { path: '/', element: <App />, children: [
@@ -28,7 +29,8 @@ const router = createHashRouter([
     { path: 'models', element: <Models/> },
     { path: 'subscriptions', element: <Subscriptions/> },
     { path: 'nfts', element: <NFTs/> },
-    { path: 'settings', element: <Settings/> }
+    { path: 'settings', element: <Settings/> },
+    { path: '*', element: <NotFound/> }
   ]}
 ])
 

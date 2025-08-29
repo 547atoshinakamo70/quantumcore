@@ -9,6 +9,7 @@
     "preview": "vite preview --port 5173"
   },
   "dependencies": {
+    "@vitejs/plugin-react": "^5.0.2",
     "axios": "^1.7.2",
     "classnames": "^2.5.1",
     "ethers": "^6.13.2",

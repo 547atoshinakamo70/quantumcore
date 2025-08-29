@@ -8,3 +8,76 @@
 .badge { @apply inline-flex gap-2 items-center bg-[#16204a] text-[#dce6ff] border border-[#233063] rounded-xl px-3 py-1 text-xs; }
 .btn { @apply bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg; }
 .input { @apply bg-[#13192d] border border-[#1f2740] rounded-lg px-3 py-2 outline-none; }
+
+/* Additional legacy styles for compatibility */
+.signal {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  background: #0f1426;
+  border: 1px solid #1b2340;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.signal i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #27e06a;
+  box-shadow: 0 0 10px #27e06a;
+}
+
+.signal b {
+  color: #eaf1ff;
+  margin-right: 8px;
+}
+
+.signal span {
+  color: #a6b6e6;
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 8px;
+}
+
+.table th {
+  color: #a9b9ff;
+  text-align: left;
+  font-weight: 600;
+  padding: 8px 10px;
+}
+
+.table td {
+  background: #0f1426;
+  border: 1px solid #1b2340;
+  color: #dce6ff;
+  padding: 10px;
+  border-radius: 8px;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin: 14px 0;
+}
+
+.kpi {
+  background: #0f1426;
+  border: 1px solid #1b2340;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.kpi b {
+  display: block;
+  color: #cfe1ff;
+}
+
+.kpi span {
+  font-size: 22px;
+  font-weight: 700;
+}

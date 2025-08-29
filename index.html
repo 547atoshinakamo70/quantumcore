@@ -3,52 +3,61 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>QuantumCore</title>
-  <link rel="stylesheet" href="styles/global.css" />
+  <title>QuantumCore - Redirecting...</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background: #0b0e16;
+      color: #e9edf6;
+      font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      text-align: center;
+    }
+    .redirect-message {
+      background: #12182b;
+      border: 1px solid #1b2340;
+      border-radius: 16px;
+      padding: 2rem;
+      max-width: 500px;
+    }
+    .brand {
+      font-weight: 800;
+      font-size: 22px;
+      background: linear-gradient(135deg, #2c5cf5 0%, #19a6ff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      margin-bottom: 1rem;
+    }
+    .loading {
+      color: #93a3d6;
+      margin: 1rem 0;
+    }
+    a {
+      color: #2754ff;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
+  <script>
+    // Redirect to React app after 2 seconds
+    setTimeout(() => {
+      window.location.href = './web/dist/index.html#/';
+    }, 2000);
+  </script>
 </head>
 <body>
-  <aside class="sidebar">
+  <div class="redirect-message">
     <div class="brand">QuantumCore</div>
-    <nav id="nav">
-      <a href="#/dashboard" class="nav-item">Dashboard</a>
-      <a href="#/wallet" class="nav-item">Wallet</a>
-      <a href="#/coinjoin" class="nav-item">CoinJoin</a>
-      <a href="#/vaults" class="nav-item">Vaults & Minería</a>
-      <a href="#/dao" class="nav-item">DAO</a>
-      <a href="#/interchain" class="nav-item">Interchain Router</a>
-      <a href="#/ai" class="nav-item">AI‑as‑a‑Service</a>
-      <a href="#/market" class="nav-item">Market Sentinel</a>
-      <a href="#/models" class="nav-item">Model Lab</a>
-      <a href="#/subscriptions" class="nav-item">Subscriptions</a>
-      <a href="#/nfts" class="nav-item">NFTs</a>
-      <a href="#/settings" class="nav-item">Settings</a>
-    </nav>
-    <div class="footer">Predict • Outpace • Win</div>
-  </aside>
-
-  <main>
-    <header class="topbar">
-      <div class="title" id="title">Dashboard</div>
-      <div class="actions" id="actions"></div>
-    </header>
-
-    <section id="view" class="view"></section>
-  </main>
-
-  <script src="js/router.js"></script>
-  <script src="js/widgets.js"></script>
-  <script src="js/views/dashboard.js"></script>
-  <script src="js/views/wallet.js"></script>
-  <script src="js/views/coinjoin.js"></script>
-  <script src="js/views/vaults.js"></script>
-  <script src="js/views/dao.js"></script>
-  <script src="js/views/interchain.js"></script>
-  <script src="js/views/ai.js"></script>
-  <script src="js/views/market.js"></script>
-  <script src="js/views/models.js"></script>
-  <script src="js/views/subscriptions.js"></script>
-  <script src="js/views/nfts.js"></script>
-  <script src="js/views/settings.js"></script>
-  <script>Router.init();</script>
+    <div class="loading">Redirigiendo a la nueva interfaz React...</div>
+    <p>La UI legacy ha sido migrada. Si no eres redirigido automáticamente:</p>
+    <p><a href="./web/dist/index.html#/">Ir a la nueva interfaz React</a></p>
+    <p><a href="./legacy-ui/index.html">Acceder a la UI legacy</a></p>
+  </div>
 </body>
 </html>

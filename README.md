@@ -16,3 +16,21 @@ basado en TensorFlow/Keras.
 7. Opcional: Ejecuta el **Relayer Guardian** como proxy para AA/RPC con límites y circuit breaker.
 
 > Sugerencia: empieza por staging (idéntico a prod) y canary 1–5% antes de 100%.
+
+## UI Migration
+
+La interfaz de usuario ha sido migrada completamente a React (Vite). El acceso principal es ahora a través de `web/dist/index.html`, mientras que la UI legacy vanilla JS se mantiene disponible en `legacy-ui/` para referencias.
+
+### Acceso a las interfaces:
+- **Nueva interfaz React** (recomendada): `./web/dist/index.html#/`
+- **UI Legacy**: `./legacy-ui/index.html`
+
+### Desarrollo:
+```bash
+cd web
+npm install
+npm run dev    # Desarrollo
+npm run build  # Construcción para producción
+```
+
+La nueva interfaz incluye componentes React mejorados para todas las secciones (Dashboard, Wallet, DAO, Market, Models, Subscriptions, NFTs, CoinJoin, Vaults, Settings) con funcionalidad interactiva de demostración.
