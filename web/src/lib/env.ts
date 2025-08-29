@@ -1,4 +1,5 @@
 export const ENV = {
+  INTERCHAIN_API: import.meta.env.VITE_INTERCHAIN_API || '',
   ETH_RPC: import.meta.env.VITE_ETH_RPC || '',
   POLYGON_RPC: import.meta.env.VITE_POLYGON_RPC || '',
   BNB_RPC: import.meta.env.VITE_BNB_RPC || '',
