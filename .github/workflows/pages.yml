@@ -83,6 +83,10 @@ jobs:
       - name: Build (auto-detect)
         id: build
         shell: bash
+        env:
+          VITE_BLOCKCHAIN_API: ${{ vars.VITE_BLOCKCHAIN_API }}
+          VITE_WS_URL: ${{ vars.VITE_WS_URL }}
+          VITE_GUARD_API: ${{ vars.VITE_GUARD_API }}
         run: |
           set -e
           DIR="${{ steps.detect.outputs.dir }}"

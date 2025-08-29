@@ -16,3 +16,44 @@ basado en TensorFlow/Keras.
 7. Opcional: Ejecuta el **Relayer Guardian** como proxy para AA/RPC con límites y circuit breaker.
 
 > Sugerencia: empieza por staging (idéntico a prod) y canary 1–5% antes de 100%.
+
+## GitHub Pages Deploy & Mining Panel
+
+### GitHub Actions Variables Setup
+Para usar el despliegue automático en GitHub Pages y el panel de minería, configura estas variables en tu repositorio:
+
+1. Ve a **Settings** → **Secrets and variables** → **Actions**
+2. En la pestaña **Variables**, añade:
+   - `VITE_BLOCKCHAIN_API`: URL de tu API de blockchain (ej: `https://api-5470.up.railway.app`)
+   - `VITE_WS_URL`: URL de WebSocket (ej: `wss://api-5470.up.railway.app`)  
+   - `VITE_GUARD_API`: URL de la API guardian (ej: `https://guard-5470.up.railway.app`)
+
+### Workflow Triggers
+- **Push a main**: Despliega automáticamente a GitHub Pages
+- **Manual**: Ve a Actions → "Deploy dApp (Auto) to GitHub Pages" → "Run workflow"
+
+### Mining Panel Features
+- **Ruta**: `/mining` - Muestra el estado del minero en tiempo real
+- **Auto-refresh**: Verifica el estado cada 30 segundos
+- **Estados**: Loading (🟡), Up (🟢), Down (🔴)
+- **Endpoint**: Consulta `${VITE_BLOCKCHAIN_API}/miner/status`
+
+### CSP Configuration
+El CSP (Content Security Policy) está configurado para permitir conexiones a dominios de Railway ejemplo:
+- `https://api-5470.up.railway.app`
+- `wss://api-5470.up.railway.app`
+- `https://guard-5470.up.railway.app`
+
+Para usar tus propios dominios, edita el meta tag CSP en `web/index.html`.
+
+### API Requirements
+El endpoint `/miner/status` debe retornar JSON con este formato mínimo:
+```json
+{
+  "status": "up",           // "up" o "down"
+  "timestamp": "2025-01-20T10:00:00Z",  // opcional
+  "hashrate": 1234567       // opcional
+}
+```
+
+Propiedades adicionales en la respuesta se mostrarán automáticamente en el panel.
