@@ -1,1 +1,0 @@
-console.log('Backend QuantumEdge corriendo en 4000');

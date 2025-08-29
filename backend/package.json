@@ -1,0 +1,23 @@
+{
+  "name": "quantumcore-backend",
+  "version": "1.0.0",
+  "description": "QuantumCore Backend Service for Mining Panel",
+  "main": "src/index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "node src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {},
+  "keywords": ["quantumcore", "mining", "backend", "api"],
+  "author": "QuantumCore Team",
+  "license": "MIT"
+}
