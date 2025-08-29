@@ -1,5 +1,5 @@
-import React from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import { BuildFooterSync } from '../components/BuildFooter'
 
 const NavItem = ({to, children}:{to:string, children:React.ReactNode}) => (
   <NavLink to={to} className={({isActive}) => 
@@ -28,7 +28,10 @@ export default function App(){
           <NavItem to="/nfts">NFTs</NavItem>
           <NavItem to="/settings">Settings</NavItem>
         </nav>
-        <div className="mt-auto p-5 text-[#9fb3ff] text-xs opacity-80">Predict • Outpace • Win</div>
+        <div className="mt-auto p-5 text-[#9fb3ff] text-xs opacity-80">
+          <div className="mb-2">Predict • Outpace • Win</div>
+          <BuildFooterSync />
+        </div>
       </aside>
       <main className="flex-1 min-w-0">
         <header className="flex items-center justify-between px-6 py-4 border-b border-[#1a2033] bg-gradient-to-b from-[#0f1322] to-[#0b0e16]">
